@@ -5,6 +5,8 @@
 [![V2Ray](https://img.shields.io/badge/V2Ray-免费节点-blue)](https://github.com/xyfqzy/free-nodes)
 [![Shadowsocks](https://img.shields.io/badge/Shadowsocks-免费-red)](https://github.com/xyfqzy/free-nodes)
 [![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/fq521)
+[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/fq521)
+
 > **关键词**: 免费V2Ray节点, 免费SS节点, Clash订阅, 科学上网, 翻墙工具, 免费代理, VPN节点, Shadowsocks免费, Trojan节点, 免费梯子, 机场分享
 
 ## 📋 节点列表
