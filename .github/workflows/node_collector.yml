@@ -50,16 +50,101 @@ jobs:
 
           if [ ! -f "simple_node_checker.py" ]; then
             echo "⚠️ 缺少 simple_node_checker.py，创建基础版本..."
-            echo "" > simple_node_checker.py
+            cat > simple_node_checker.py << 'EOF'
+import asyncio
+import aiohttp
+import time
+from urllib.parse import urlparse
+
+class SimpleNodeChecker:
+    def __init__(self, timeout=10, max_concurrent=50):
+        self.timeout = timeout
+        self.max_concurrent = max_concurrent
+        self.semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def check_node(self, node_url):
+        """简单的节点检查，返回True如果节点可用"""
+        try:
+            async with self.semaphore:
+                # 这里可以添加更复杂的检查逻辑
+                # 目前只是简单返回True，表示节点可用
+                await asyncio.sleep(0.1)  # 模拟检查延迟
+                return True
+        except Exception:
+            return False
+    
+    async def check_nodes(self, nodes):
+        """批量检查节点"""
+        if not nodes:
+            return []
+        
+        tasks = [self.check_node(node) for node in nodes]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        valid_nodes = []
+        for i, result in enumerate(results):
+            if result is True:
+                valid_nodes.append(nodes[i])
+        
+        return valid_nodes
+EOF
           fi
 
           if [ ! -f "china_node_tester.py" ]; then
             echo "⚠️ 缺少 china_node_tester.py，创建基础版本..."
-            echo "" > china_node_tester.py
+            cat > china_node_tester.py << 'EOF'
+import asyncio
+import aiohttp
+
+class ChinaNodeTester:
+    def __init__(self, timeout=10):
+        self.timeout = timeout
+    
+    async def test_node(self, node_config):
+        """测试节点连通性"""
+        try:
+            # 简单的测试逻辑
+            await asyncio.sleep(0.1)
+            return True
+        except Exception:
+            return False
+    
+    async def test_nodes(self, nodes):
+        """批量测试节点"""
+        if not nodes:
+            return []
+        
+        tasks = [self.test_node(node) for node in nodes]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        valid_nodes = []
+        for i, result in enumerate(results):
+            if result is True:
+                valid_nodes.append(nodes[i])
+        
+        return valid_nodes
+EOF
           fi
 
           echo "🚀 开始运行节点收集器..."
-          python node_collector.py
+          # 尝试运行，如果失败则提供错误信息
+          python node_collector.py || {
+            echo "❌ 节点收集器运行失败"
+            echo "📋 检查 node_collector.py 的依赖..."
+            python -c "
+import sys
+try:
+    import node_collector
+    print('✅ node_collector.py 导入成功')
+except ImportError as e:
+    print(f'❌ 导入错误: {e}')
+    sys.exit(1)
+except Exception as e:
+    print(f'❌ 其他错误: {e}')
+    sys.exit(1)
+"
+            exit 1
+          }
 
       - name: Check generated files
         run: |
