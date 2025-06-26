@@ -81,8 +81,7 @@ jobs:
     - name: Generate README for nodes
       run: |
         cat > nodes/README.md << 'EOF'
-<在这里插入 README.md 内容模板>
-EOF
+
 
     - name: Update node counts in README
       run: |
