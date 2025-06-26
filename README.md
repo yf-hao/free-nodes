@@ -7,7 +7,7 @@
 [![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/fq521)
 
 > **关键词**: 免费V2Ray节点, 免费SS节点, Clash订阅, 科学上网, 翻墙工具, 免费代理, VPN节点, Shadowsocks免费, Trojan节点, 免费梯子, 机场分享
-TG群 [![TG频道](https://t.me/fq521)
+TG群 https://t.me/fq521
 ## 📋 节点列表
 
 ### 🔗 订阅链接
