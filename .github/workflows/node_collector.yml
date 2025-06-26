@@ -48,24 +48,16 @@ jobs:
           exit 1
         fi
 
-        # 进入文件所在目录
-        SCRIPT_DIR=$(dirname $(find . -name node_collector.py))
-        cd "$SCRIPT_DIR"
-
         # 检查 simple_node_checker.py 是否存在
         if [ ! -f "simple_node_checker.py" ]; then
           echo "⚠️ 缺少 simple_node_checker.py，创建基础版本..."
-          cat > simple_node_checker.py << 'EOF'
-<在这里插入 simple_node_checker.py 内容>
-EOF
+          echo "" > simple_node_checker.py
         fi
 
         # 检查 china_node_tester.py 是否存在
         if [ ! -f "china_node_tester.py" ]; then
           echo "⚠️ 缺少 china_node_tester.py，创建基础版本..."
-          cat > china_node_tester.py << 'EOF'
-<在这里插入 china_node_tester.py 内容>
-EOF
+          echo "" > china_node_tester.py
         fi
 
         echo "🚀 开始运行节点收集器..."
@@ -146,7 +138,7 @@ $(if [ -f \"nodes/clash.yaml\" ]; then echo \"- Clash: $(grep -c 'name:' nodes/c
         if [ $TOTAL_NODES -gt 50 ]; then
           RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
           RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
-          cat > release_notes.md << EOF
+          cat > release_notes.md << 'EOF'
 <在这里插入 release_notes.md 内容模板>
 EOF
           gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release_notes.md nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
