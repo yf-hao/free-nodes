@@ -93,63 +93,32 @@ jobs:
         sed -i "s/- 🔄 \*\*更新时间\*\*:.*/- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')/" nodes/README.md
         sed -i "/## 📊 节点统计/a\\- 📈 **总节点数**: $TOTAL_COUNT\\n- 🎯 **V2Ray节点**: $V2RAY_COUNT\\n- 🛡️ **Shadowsocks节点**: $SS_COUNT\\n- 🔐 **Trojan节点**: $TROJAN_COUNT\\n- ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
 
-    - name: Commit and push changes
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add nodes/
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-          exit 0
-        fi
-        TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S UTC')
-        CHINA_SUMMARY=""
-        if [ -f "小火箭/china_test_summary.json" ]; then
-          CHINA_SUMMARY=$(cat 小火箭/china_test_summary.json 2>/dev/null || echo '{}')
-        elif [ -f "china_test_summary.json" ]; then
-          CHINA_SUMMARY=$(cat china_test_summary.json 2>/dev/null || echo '{}')
-        fi
-        git commit -m "🚀 自动更新节点 - $TIMESTAMP
+- name: Create release on significant updates
+  if: github.event_name == 'schedule'
+  run: |
+    TOTAL_NODES=0
+    [ -f "nodes/v2ray.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/v2ray.txt)))
+    [ -f "nodes/shadowsocks.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/shadowsocks.txt)))
+    [ -f "nodes/trojan.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/trojan.txt)))
+    if [ $TOTAL_NODES -gt 50 ]; then
+      RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
+      RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
+      cat > release_notes.md << 'EOF'
+## 📊 本次更新统计
 
-📊 本次更新统计:
-$(if [ -f \"nodes/v2ray.txt\" ]; then echo \"- V2Ray: $(wc -l < nodes/v2ray.txt) 个节点\"; fi)
-$(if [ -f \"nodes/shadowsocks.txt\" ]; then echo \"- Shadowsocks: $(wc -l < nodes/shadowsocks.txt) 个节点\"; fi)
-$(if [ -f \"nodes/trojan.txt\" ]; then echo \"- Trojan: $(wc -l < nodes/trojan.txt) 个节点\"; fi)
-$(if [ -f \"nodes/clash.yaml\" ]; then echo \"- Clash: $(grep -c 'name:' nodes/clash.yaml || echo '0') 个代理\"; fi)
+- 🎯 **总节点数**: PLACEHOLDER
+- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')
+- ✅ **测活状态**: 已通过连通性测试
 
-🇨🇳 中国翻墙优化:
-- 专门针对中国网络环境进行测活筛选
-- 优先保存高质量翻墙节点（评分≥60分）
-- 协议适用性排序: Trojan > VLESS > VMess > SS
+## 📋 订阅链接
 
-🔄 数据来源: 60+ 免费节点订阅源
-✅ 测活状态: 已通过中国翻墙适用性测试
-📱 TG频道: https://t.me/fq521"
-        git push
+- V2Ray: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
+- Clash: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
+- Shadowsocks: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
+- Trojan: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
+EOF
 
-    - name: Create release on significant updates
-      if: github.event_name == 'schedule'
-      run: |
-        TOTAL_NODES=0
-        [ -f "nodes/v2ray.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/v2ray.txt)))
-        [ -f "nodes/shadowsocks.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/shadowsocks.txt)))
-        [ -f "nodes/trojan.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/trojan.txt)))
-        if [ $TOTAL_NODES -gt 50 ]; then
-          RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
-          RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
-          cat > release_notes.md << 'EOF'
-
-          gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release_notes.md nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
-        fi
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Clean up old releases
-      if: github.event_name == 'schedule'
-      run: |
-        gh release list --limit 100 --json tagName,createdAt | jq -r 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' | while read tag; do
-          echo "Deleting old release: $tag"
-          gh release delete "$tag" --yes || echo "Failed to delete $tag"
-        done
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release_notes.md nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
+    fi
+  env:
+    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
