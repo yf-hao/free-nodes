@@ -21,7 +21,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
         
     - name: Setup Python
       uses: actions/setup-python@v4
@@ -325,6 +325,11 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+        
+        # 配置git认证（使用PAT token如果可用）
+        if [ -n "${{ secrets.PAT }}" ]; then
+          git remote set-url origin https://x-access-token:${{ secrets.PAT }}@github.com/${{ github.repository }}.git
+        fi
         
         # 添加所有更改
         git add nodes/
