@@ -182,13 +182,16 @@ except Exception as e:
           # 更新时间
           sed -i "s/- 🔄 \*\*更新时间\*\*:.*/- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')/" nodes/README.md
           
-          # 添加节点统计信息
-          sed -i "/## 📊 节点统计/a\\
-          - 📈 **总节点数**: $TOTAL_COUNT\\
-          - 🎯 **V2Ray节点**: $V2RAY_COUNT\\
-          - 🛡️ **Shadowsocks节点**: $SS_COUNT\\
-          - 🔐 **Trojan节点**: $TROJAN_COUNT\\
-          - ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
+          # 添加节点统计信息 - 修正版本
+          {
+            echo "- 📈 **总节点数**: $TOTAL_COUNT"
+            echo "- 🎯 **V2Ray节点**: $V2RAY_COUNT"
+            echo "- 🛡️ **Shadowsocks节点**: $SS_COUNT"
+            echo "- 🔐 **Trojan节点**: $TROJAN_COUNT"
+            echo "- ⚡ **Clash配置**: $CLASH_COUNT 个代理"
+          } > /tmp/stats.txt
+          
+          sed -i '/## 📊 节点统计/r /tmp/stats.txt' nodes/README.md
 
       - name: Commit and push changes
         run: |
