@@ -139,8 +139,7 @@ $(if [ -f \"nodes/clash.yaml\" ]; then echo \"- Clash: $(grep -c 'name:' nodes/c
           RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
           RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
           cat > release_notes.md << 'EOF'
-<在这里插入 release_notes.md 内容模板>
-EOF
+
           gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release_notes.md nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
         fi
       env:
