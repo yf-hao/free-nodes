@@ -1,10 +1,10 @@
 # 🚀 免费代理节点分享
-[TG频道](https://t.me/fq521) 
+
 [![更新状态](https://github.com/xyfqzy/free-nodes/actions/workflows/update-nodes.yml/badge.svg)](https://github.com/xyfqzy/free-nodes/actions)
 [![节点数量](https://img.shields.io/badge/节点数量-动态更新-brightgreen)](https://github.com/xyfqzy/free-nodes)
 [![V2Ray](https://img.shields.io/badge/V2Ray-免费节点-blue)](https://github.com/xyfqzy/free-nodes)
 [![Shadowsocks](https://img.shields.io/badge/Shadowsocks-免费-red)](https://github.com/xyfqzy/free-nodes)
-
+[TG频道](https://t.me/fq521) 
 > **关键词**: 免费V2Ray节点, 免费SS节点, Clash订阅, 科学上网, 翻墙工具, 免费代理, VPN节点, Shadowsocks免费, Trojan节点, 免费梯子, 机场分享
 
 ## 📋 节点列表
