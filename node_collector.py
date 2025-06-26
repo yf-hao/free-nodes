@@ -35,19 +35,101 @@ except ImportError:
             self.max_workers = max_workers
     
         def check_nodes_batch(self, nodes):
-            """简化的节点批量检测"""
+            """真正的节点批量检测"""
+            import socket
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
             results = []
-            for i, node in enumerate(nodes):
-                protocol = self._get_protocol(node)
-                results.append({
-                    'url': node,
-                    'success': True,  # 简化版本，默认通过
-                    'latency': 100,
-                    'protocol': protocol,
-                    'address': self._get_address(node),
-                    'port': self._get_port(node),
-                    'remarks': f"Node-{i+1}"
-                })
+            
+            def test_single_node(node_url):
+                try:
+                    protocol = self._get_protocol(node_url)
+                    address = self._get_address(node_url)
+                    port = self._get_port(node_url)
+                    
+                    if not address or port == 0:
+                        return {
+                            'url': node_url,
+                            'success': False,
+                            'latency': 0,
+                            'protocol': protocol,
+                            'address': address,
+                            'port': port,
+                            'remarks': 'Parse failed',
+                            'error': 'Failed to parse node'
+                        }
+                    
+                    # TCP连接测试
+                    start_time = time.time()
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(self.timeout)
+                        result = sock.connect_ex((address, port))
+                        sock.close()
+                        
+                        latency = (time.time() - start_time) * 1000
+                        success = (result == 0)
+                        
+                        return {
+                            'url': node_url,
+                            'success': success,
+                            'latency': latency,
+                            'protocol': protocol,
+                            'address': address,
+                            'port': port,
+                            'remarks': f"{protocol.upper()}-{address}:{port}",
+                            'error': '' if success else f'Connection failed (code: {result})'
+                        }
+                    except socket.gaierror:
+                        return {
+                            'url': node_url,
+                            'success': False,
+                            'latency': 0,
+                            'protocol': protocol,
+                            'address': address,
+                            'port': port,
+                            'remarks': f"{protocol.upper()}-{address}:{port}",
+                            'error': 'DNS resolution failed'
+                        }
+                    except Exception as e:
+                        return {
+                            'url': node_url,
+                            'success': False,
+                            'latency': 0,
+                            'protocol': protocol,
+                            'address': address,
+                            'port': port,
+                            'remarks': f"{protocol.upper()}-{address}:{port}",
+                            'error': f'Test failed: {str(e)}'
+                        }
+                
+                except Exception as e:
+                    return {
+                        'url': node_url,
+                        'success': False,
+                        'latency': 0,
+                        'protocol': 'unknown',
+                        'address': 'unknown',
+                        'port': 0,
+                        'remarks': 'Parse error',
+                        'error': f'Parse error: {str(e)}'
+                    }
+            
+            # 并发测试节点
+            logger.info(f"开始TCP连接测试 {len(nodes)} 个节点...")
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_node = {executor.submit(test_single_node, node): node for node in nodes}
+                
+                completed = 0
+                for future in as_completed(future_to_node):
+                    result = future.result()
+                    results.append(result)
+                    completed += 1
+                    
+                    if completed % 100 == 0 or completed == len(nodes):
+                        success_count = len([r for r in results if r['success']])
+                        logger.info(f"测试进度: {completed}/{len(nodes)}, 可用: {success_count}")
+            
             return results
     
         def _get_protocol(self, url):
@@ -56,7 +138,12 @@ except ImportError:
         def _get_address(self, url):
             try:
                 if url.startswith('vmess://'):
-                    data = json.loads(base64.b64decode(url[8:] + '==').decode())
+                    # 处理base64填充
+                    encoded = url[8:]
+                    missing_padding = len(encoded) % 4
+                    if missing_padding:
+                        encoded += '=' * (4 - missing_padding)
+                    data = json.loads(base64.b64decode(encoded).decode())
                     return data.get('add', 'unknown')
                 else:
                     parsed = urlparse(url)
@@ -67,7 +154,12 @@ except ImportError:
         def _get_port(self, url):
             try:
                 if url.startswith('vmess://'):
-                    data = json.loads(base64.b64decode(url[8:] + '==').decode())
+                    # 处理base64填充
+                    encoded = url[8:]
+                    missing_padding = len(encoded) % 4
+                    if missing_padding:
+                        encoded += '=' * (4 - missing_padding)
+                    data = json.loads(base64.b64decode(encoded).decode())
                     return int(data.get('port', 0))
                 else:
                     parsed = urlparse(url)
@@ -523,29 +615,90 @@ class NodeCollector:
                     self.max_workers = max_workers
                 
                 def batch_test_for_china(self, nodes):
-                    """简化的中国翻墙测试"""
+                    """基于实际连接的中国翻墙测试"""
+                    import socket
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    
                     results = []
-                    for i, node in enumerate(nodes):
-                        protocol = self._get_protocol(node)
-                        score = self._calculate_china_score(protocol)
-                        
-                        result = {
-                            'url': node,
-                            'protocol': protocol,
-                            'address': self._get_address(node),
-                            'port': self._get_port(node),
-                            'remarks': f"China-Node-{i+1}",
-                            'overall_score': score,
-                            'recommended_for_china': score >= 60,
-                            'suggestion': '适合中国翻墙使用' if score >= 60 else '不推荐中国使用',
-                            'details': {
-                                'connectivity': {'latency': 100 + i * 10},
-                                'protocol_score': self._get_protocol_score(protocol),
-                                'port_score': 15,
-                                'location_score': 15
+                    
+                    def test_china_node(node_url):
+                        try:
+                            protocol = self._get_protocol(node_url)
+                            address = self._get_address(node_url)
+                            port = self._get_port(node_url)
+                            
+                            if not address or port == 0:
+                                return self._create_failed_result(node_url, protocol, address, port, "解析失败")
+                            
+                            # TCP连接测试
+                            start_time = time.time()
+                            success = False
+                            latency = 0
+                            
+                            try:
+                                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                sock.settimeout(self.timeout)
+                                result = sock.connect_ex((address, port))
+                                sock.close()
+                                
+                                latency = (time.time() - start_time) * 1000
+                                success = (result == 0)
+                                
+                            except Exception as e:
+                                success = False
+                                latency = self.timeout * 1000
+                            
+                            # 基于实际测试结果计算评分
+                            if success:
+                                base_score = 40  # 连接成功基础分
+                                protocol_score = self._get_protocol_score(protocol)
+                                port_score = self._get_port_score(port)
+                                latency_score = self._get_latency_score(latency)
+                                
+                                overall_score = base_score + protocol_score + port_score + latency_score
+                            else:
+                                overall_score = 0  # 连接失败直接0分
+                            
+                            recommended = overall_score >= 60 and success
+                            
+                            return {
+                                'url': node_url,
+                                'protocol': protocol,
+                                'address': address,
+                                'port': port,
+                                'remarks': f"China-{protocol.upper()}-{address}:{port}",
+                                'overall_score': min(100, overall_score),
+                                'recommended_for_china': recommended,
+                                'suggestion': '适合中国翻墙使用' if recommended else '连接失败或质量不佳',
+                                'details': {
+                                    'connectivity': {
+                                        'latency': latency,
+                                        'success': success
+                                    },
+                                    'protocol_score': self._get_protocol_score(protocol),
+                                    'port_score': self._get_port_score(port),
+                                    'latency_score': self._get_latency_score(latency) if success else 0
+                                },
+                                'error': '' if success else '连接失败'
                             }
-                        }
-                        results.append(result)
+                            
+                        except Exception as e:
+                            return self._create_failed_result(node_url, 'unknown', 'unknown', 0, f"测试异常: {str(e)}")
+                    
+                    # 并发测试
+                    logger.info(f"开始中国翻墙测试 {len(nodes)} 个节点...")
+                    with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                        future_to_node = {executor.submit(test_china_node, node): node for node in nodes}
+                        
+                        completed = 0
+                        for future in as_completed(future_to_node):
+                            result = future.result()
+                            results.append(result)
+                            completed += 1
+                            
+                            if completed % 50 == 0 or completed == len(nodes):
+                                recommended_count = len([r for r in results if r['recommended_for_china']])
+                                logger.info(f"中国测试进度: {completed}/{len(nodes)}, 推荐: {recommended_count}")
                     
                     return {
                         'all_results': results,
@@ -554,6 +707,25 @@ class NodeCollector:
                             'recommended_count': len([r for r in results if r['recommended_for_china']]),
                             'average_score': sum(r['overall_score'] for r in results) / len(results) if results else 0
                         }
+                    }
+                
+                def _create_failed_result(self, node_url, protocol, address, port, error_msg):
+                    return {
+                        'url': node_url,
+                        'protocol': protocol,
+                        'address': address,
+                        'port': port,
+                        'remarks': f"Failed-{protocol}-{address}:{port}",
+                        'overall_score': 0,
+                        'recommended_for_china': False,
+                        'suggestion': '解析或连接失败',
+                        'details': {
+                            'connectivity': {'latency': 0, 'success': False},
+                            'protocol_score': 0,
+                            'port_score': 0,
+                            'latency_score': 0
+                        },
+                        'error': error_msg
                     }
                 
                 def _get_protocol(self, url):
@@ -585,19 +757,42 @@ class NodeCollector:
                     scores = {'trojan': 30, 'vless': 25, 'vmess': 20, 'ss': 15}
                     return scores.get(protocol.lower(), 10)
                 
-                def _calculate_china_score(self, protocol):
-                    base_score = 40  # 连通性基础分
-                    protocol_score = self._get_protocol_score(protocol)
-                    port_score = 15  # 端口分
-                    location_score = 15  # 位置分
-                    return base_score + protocol_score + port_score + location_score
+                def _get_port_score(self, port):
+                    """根据端口评分（常用端口分数更高）"""
+                    common_ports = [443, 80, 8080, 8443, 2053, 2083, 2087, 2096]
+                    if port in common_ports:
+                        return 15
+                    elif port in range(8000, 9000):  # 8xxx端口
+                        return 10
+                    else:
+                        return 5
+                
+                def _get_latency_score(self, latency):
+                    """根据延迟评分"""
+                    if latency < 100:
+                        return 15  # 极低延迟
+                    elif latency < 300:
+                        return 12  # 低延迟
+                    elif latency < 500:
+                        return 8   # 中等延迟
+                    elif latency < 1000:
+                        return 5   # 高延迟
+                    else:
+                        return 0   # 超高延迟
         
         # 使用中国测活器进行更精准的测试
         china_tester = ChinaNodeTester(timeout=8, max_workers=30)
         
+        # 限制测试节点数量（避免过度耗时）
+        nodes_to_test = list(all_nodes)
+        if len(nodes_to_test) > 5000:
+            logger.info(f"节点数量过多({len(nodes_to_test)})，随机选择5000个进行测试")
+            import random
+            nodes_to_test = random.sample(nodes_to_test, 5000)
+        
         # 先进行基础测活
-        basic_checker = SimpleNodeChecker(timeout=5, max_workers=50)
-        basic_results = basic_checker.check_nodes_batch(list(all_nodes))
+        basic_checker = SimpleNodeChecker(timeout=3, max_workers=100)  # 减少超时时间，增加并发
+        basic_results = basic_checker.check_nodes_batch(nodes_to_test)
         
         # 对基础测活通过的节点进行中国翻墙测试
         working_basic = [r for r in basic_results if r['success']]
