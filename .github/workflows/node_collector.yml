@@ -79,27 +79,29 @@ jobs:
       - name: Generate README for nodes
         run: |
           cat > nodes/README.md << 'EOF'
-# 免费代理节点
+          # 免费代理节点
 
-- 🔄 **更新时间**: PLACEHOLDER
-- 🌐 **数据来源**: 60+ 免费节点订阅源
-- ✅ **测活检测**: 自动筛选可用节点
-- 🚀 **更新频率**: 每6小时自动更新
+          - 🔄 **更新时间**: PLACEHOLDER
+          - 🌐 **数据来源**: 60+ 免费节点订阅源
+          - ✅ **测活检测**: 自动筛选可用节点
+          - 🚀 **更新频率**: 每6小时自动更新
 
-## 📋 订阅链接
+          ## 📊 节点统计
 
-### V2Ray
-https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
+          ## 📋 订阅链接
 
-### Clash
-https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
+          ### V2Ray
+          https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
 
-### Shadowsocks
-https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
+          ### Clash
+          https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
 
-### Trojan
-https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
-EOF
+          ### Shadowsocks
+          https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
+
+          ### Trojan
+          https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
+          EOF
 
       - name: Update node counts in README
         run: |
@@ -108,30 +110,26 @@ EOF
           TROJAN_COUNT=$(wc -l < nodes/trojan.txt 2>/dev/null || echo 0)
           CLASH_COUNT=$(grep -c "name:" nodes/clash.yaml 2>/dev/null || echo 0)
           TOTAL_COUNT=$((V2RAY_COUNT + SS_COUNT + TROJAN_COUNT))
+          
+          # 更新时间
           sed -i "s/- 🔄 \*\*更新时间\*\*:.*/- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')/" nodes/README.md
-          sed -i "/## 📊 节点统计/a\\- 📈 **总节点数**: $TOTAL_COUNT\\n- 🎯 **V2Ray节点**: $V2RAY_COUNT\\n- 🛡️ **Shadowsocks节点**: $SS_COUNT\\n- 🔐 **Trojan节点**: $TROJAN_COUNT\\n- ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
+          
+          # 添加节点统计信息
+          sed -i "/## 📊 节点统计/a\\
+          - 📈 **总节点数**: $TOTAL_COUNT\\
+          - 🎯 **V2Ray节点**: $V2RAY_COUNT\\
+          - 🛡️ **Shadowsocks节点**: $SS_COUNT\\
+          - 🔐 **Trojan节点**: $TROJAN_COUNT\\
+          - ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
 
-          - name: Generate README for nodes
-      run: |
-        cat > nodes/README.md << 'EOF'
-# 免费代理节点
-
-- 🔄 **更新时间**: PLACEHOLDER
-- 🌐 **数据来源**: 60+ 免费节点订阅源
-- ✅ **测活检测**: 自动筛选可用节点
-- 🚀 **更新频率**: 每6小时自动更新
-
-## 📋 订阅链接
-
-### V2Ray
-https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
-
-### Clash
-https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
-
-### Shadowsocks
-https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
-
-### Trojan
-https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
-EOF
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add nodes/
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "🔄 自动更新节点 $(date '+%Y-%m-%d %H:%M:%S UTC')"
+            git push
+          fi
