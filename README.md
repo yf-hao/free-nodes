@@ -1,7 +1,7 @@
 # 🚀 免费代理节点分享
 
-[![更新状态](https://github.com/你的用户名/free-nodes/actions/workflows/update-nodes.yml/badge.svg)](https://github.com/你的用户名/free-nodes/actions)
-[![节点数量](https://img.shields.io/badge/节点数量-动态更新-brightgreen)](https://github.com/你的用户名/free-nodes)
+[![更新状态](https://github.com/xyfqzy/free-nodes/actions/workflows/update-nodes.yml/badge.svg)](https://github.com/xyfqzy/free-nodes/actions)
+[![节点数量](https://img.shields.io/badge/节点数量-动态更新-brightgreen)](https://github.com/xyfqzy/free-nodes)
 
 ## 📋 节点列表
 
