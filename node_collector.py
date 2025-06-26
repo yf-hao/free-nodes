@@ -773,7 +773,7 @@ class NodeCollector:
         
         if working_basic:
             logger.info(f"🔧 开始二次高级测活检测...")
-            china_results = china_tester.test_nodes_batch([r['url'] for r in working_basic])
+            china_results = china_tester.check_nodes_batch([r['url'] for r in working_basic])
             
             # 合并结果，优先使用高级测试的结果
             china_results_dict = {r['url']: r for r in china_results}
