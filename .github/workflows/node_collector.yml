@@ -50,77 +50,63 @@ jobs:
 
           if [ ! -f "simple_node_checker.py" ]; then
             echo "⚠️ 缺少 simple_node_checker.py，创建基础版本..."
-            python3 -c "
-with open('simple_node_checker.py', 'w') as f:
-    f.write('''import asyncio
-import aiohttp
-import time
-from urllib.parse import urlparse
-
-class SimpleNodeChecker:
-    def __init__(self, timeout=10, max_concurrent=50):
-        self.timeout = timeout
-        self.max_concurrent = max_concurrent
-        self.semaphore = asyncio.Semaphore(max_concurrent)
-    
-    async def check_node(self, node_url):
-        try:
-            async with self.semaphore:
-                await asyncio.sleep(0.1)
-                return True
-        except Exception:
-            return False
-    
-    async def check_nodes(self, nodes):
-        if not nodes:
-            return []
-        
-        tasks = [self.check_node(node) for node in nodes]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        valid_nodes = []
-        for i, result in enumerate(results):
-            if result is True:
-                valid_nodes.append(nodes[i])
-        
-        return valid_nodes
-''')
-"
+            echo 'import asyncio' > simple_node_checker.py
+            echo 'import aiohttp' >> simple_node_checker.py
+            echo 'import time' >> simple_node_checker.py
+            echo 'from urllib.parse import urlparse' >> simple_node_checker.py
+            echo '' >> simple_node_checker.py
+            echo 'class SimpleNodeChecker:' >> simple_node_checker.py
+            echo '    def __init__(self, timeout=10, max_concurrent=50):' >> simple_node_checker.py
+            echo '        self.timeout = timeout' >> simple_node_checker.py
+            echo '        self.max_concurrent = max_concurrent' >> simple_node_checker.py
+            echo '        self.semaphore = asyncio.Semaphore(max_concurrent)' >> simple_node_checker.py
+            echo '' >> simple_node_checker.py
+            echo '    async def check_node(self, node_url):' >> simple_node_checker.py
+            echo '        try:' >> simple_node_checker.py
+            echo '            async with self.semaphore:' >> simple_node_checker.py
+            echo '                await asyncio.sleep(0.1)' >> simple_node_checker.py
+            echo '                return True' >> simple_node_checker.py
+            echo '        except Exception:' >> simple_node_checker.py
+            echo '            return False' >> simple_node_checker.py
+            echo '' >> simple_node_checker.py
+            echo '    async def check_nodes(self, nodes):' >> simple_node_checker.py
+            echo '        if not nodes:' >> simple_node_checker.py
+            echo '            return []' >> simple_node_checker.py
+            echo '        tasks = [self.check_node(node) for node in nodes]' >> simple_node_checker.py
+            echo '        results = await asyncio.gather(*tasks, return_exceptions=True)' >> simple_node_checker.py
+            echo '        valid_nodes = []' >> simple_node_checker.py
+            echo '        for i, result in enumerate(results):' >> simple_node_checker.py
+            echo '            if result is True:' >> simple_node_checker.py
+            echo '                valid_nodes.append(nodes[i])' >> simple_node_checker.py
+            echo '        return valid_nodes' >> simple_node_checker.py
           fi
 
           if [ ! -f "china_node_tester.py" ]; then
             echo "⚠️ 缺少 china_node_tester.py，创建基础版本..."
-            python3 -c "
-with open('china_node_tester.py', 'w') as f:
-    f.write('''import asyncio
-import aiohttp
-
-class ChinaNodeTester:
-    def __init__(self, timeout=10):
-        self.timeout = timeout
-    
-    async def test_node(self, node_config):
-        try:
-            await asyncio.sleep(0.1)
-            return True
-        except Exception:
-            return False
-    
-    async def test_nodes(self, nodes):
-        if not nodes:
-            return []
-        
-        tasks = [self.test_node(node) for node in nodes]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        valid_nodes = []
-        for i, result in enumerate(results):
-            if result is True:
-                valid_nodes.append(nodes[i])
-        
-        return valid_nodes
-''')
-"
+            echo 'import asyncio' > china_node_tester.py
+            echo 'import aiohttp' >> china_node_tester.py
+            echo '' >> china_node_tester.py
+            echo 'class ChinaNodeTester:' >> china_node_tester.py
+            echo '    def __init__(self, timeout=10):' >> china_node_tester.py
+            echo '        self.timeout = timeout' >> china_node_tester.py
+            echo '' >> china_node_tester.py
+            echo '    async def test_node(self, node_config):' >> china_node_tester.py
+            echo '        try:' >> china_node_tester.py
+            echo '            await asyncio.sleep(0.1)' >> china_node_tester.py
+            echo '            return True' >> china_node_tester.py
+            echo '        except Exception:' >> china_node_tester.py
+            echo '            return False' >> china_node_tester.py
+            echo '' >> china_node_tester.py
+            echo '    async def test_nodes(self, nodes):' >> china_node_tester.py
+            echo '        if not nodes:' >> china_node_tester.py
+            echo '            return []' >> china_node_tester.py
+            echo '        tasks = [self.test_node(node) for node in nodes]' >> china_node_tester.py
+            echo '        results = await asyncio.gather(*tasks, return_exceptions=True)' >> china_node_tester.py
+            echo '        valid_nodes = []' >> china_node_tester.py
+            echo '        for i, result in enumerate(results):' >> china_node_tester.py
+            echo '            if result is True:' >> china_node_tester.py
+            echo '                valid_nodes.append(nodes[i])' >> china_node_tester.py
+            echo '        return valid_nodes' >> china_node_tester.py
           fi
 
           echo "🚀 开始运行节点收集器..."
