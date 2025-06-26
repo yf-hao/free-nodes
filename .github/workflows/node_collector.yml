@@ -111,54 +111,27 @@ EOF
           sed -i "s/- 🔄 \*\*更新时间\*\*:.*/- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')/" nodes/README.md
           sed -i "/## 📊 节点统计/a\\- 📈 **总节点数**: $TOTAL_COUNT\\n- 🎯 **V2Ray节点**: $V2RAY_COUNT\\n- 🛡️ **Shadowsocks节点**: $SS_COUNT\\n- 🔐 **Trojan节点**: $TROJAN_COUNT\\n- ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
 
-      - name: Commit and push changes
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add nodes/
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
-          TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S UTC')
-          git commit -m "🚀 自动更新节点 - $TIMESTAMP"
-          git push
+          - name: Generate README for nodes
+      run: |
+        cat > nodes/README.md << 'EOF'
+# 免费代理节点
 
-      - name: Create release on significant updates
-        if: github.event_name == 'schedule'
-        run: |
-          TOTAL_NODES=0
-          [ -f "nodes/v2ray.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/v2ray.txt)))
-          [ -f "nodes/shadowsocks.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/shadowsocks.txt)))
-          [ -f "nodes/trojan.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/trojan.txt)))
-          if [ $TOTAL_NODES -gt 50 ]; then
-            RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
-            RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
-            cat > release_notes.md << 'EOF'
-## 📊 本次更新统计
-
-- 🎯 **总节点数**: PLACEHOLDER
-- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')
-- ✅ **测活状态**: 已通过连通性测试
+- 🔄 **更新时间**: PLACEHOLDER
+- 🌐 **数据来源**: 60+ 免费节点订阅源
+- ✅ **测活检测**: 自动筛选可用节点
+- 🚀 **更新频率**: 每6小时自动更新
 
 ## 📋 订阅链接
 
-- V2Ray: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
-- Clash: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
-- Shadowsocks: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
-- Trojan: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
-EOF
-            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release_notes.md nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+### V2Ray
+https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
 
-      - name: Clean up old releases
-        if: github.event_name == 'schedule'
-        run: |
-          gh release list --limit 100 --json tagName,createdAt | jq -r 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' | while read tag; do
-            echo "Deleting old release: $tag"
-            gh release delete "$tag" --yes || echo "Failed to delete $tag"
-          done
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+### Clash
+https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
+
+### Shadowsocks
+https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
+
+### Trojan
+https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
+EOF
