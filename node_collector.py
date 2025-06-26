@@ -458,14 +458,80 @@ class NodeCollector:
             logger.error("❌ 未收集到任何节点")
             return
         
-        # 2. 测活检测
-        logger.info(f"🔍 开始测活检测 {len(all_nodes)} 个节点...")
-        checker = SimpleNodeChecker(timeout=5, max_workers=50)
-        results = checker.check_nodes_batch(list(all_nodes))
+        # 2. 测活检测（增强版，专门针对中国大陆翻墙）
+        logger.info(f"🔍 开始中国大陆翻墙测活检测 {len(all_nodes)} 个节点...")
+        from china_node_tester import ChinaNodeTester
         
-        # 3. 过滤可用节点
+        # 使用中国测活器进行更精准的测试
+        china_tester = ChinaNodeTester(timeout=8, max_workers=30)
+        
+        # 先进行基础测活
+        basic_checker = SimpleNodeChecker(timeout=5, max_workers=50)
+        basic_results = basic_checker.check_nodes_batch(list(all_nodes))
+        
+        # 对基础测活通过的节点进行中国翻墙测试
+        working_basic = [r for r in basic_results if r['success']]
+        logger.info(f"📊 基础测活通过: {len(working_basic)}/{len(all_nodes)} 个节点")
+        
+        if working_basic:
+            logger.info(f"🇨🇳 开始中国翻墙适用性测试...")
+            china_summary = china_tester.batch_test_for_china([r['url'] for r in working_basic])
+            
+            # 合并结果，优先使用中国测试的结果
+            china_results_dict = {r['url']: r for r in china_summary['all_results']}
+            
+            results = []
+            for basic_result in basic_results:
+                url = basic_result['url']
+                if url in china_results_dict:
+                    # 使用中国测试结果，但保留基础测试的某些信息
+                    china_result = china_results_dict[url]
+                    enhanced_result = {
+                        'url': url,
+                        'success': china_result.get('recommended_for_china', False),
+                        'latency': china_result.get('details', {}).get('connectivity', {}).get('latency', 0),
+                        'protocol': china_result.get('protocol', ''),
+                        'address': china_result.get('address', ''),
+                        'port': china_result.get('port', 0),
+                        'remarks': china_result.get('remarks', ''),
+                        'china_score': china_result.get('overall_score', 0),
+                        'china_usable': china_result.get('recommended_for_china', False),
+                        'suggestion': china_result.get('suggestion', ''),
+                        'error': china_result.get('error', '') if not china_result.get('recommended_for_china', False) else ''
+                    }
+                    results.append(enhanced_result)
+                else:
+                    # 基础测试失败的节点
+                    basic_result['china_usable'] = False
+                    basic_result['china_score'] = 0
+                    results.append(basic_result)
+            
+            # 保存中国测试详细报告
+            with open('china_test_summary.json', 'w', encoding='utf-8') as f:
+                json.dump(china_summary, f, ensure_ascii=False, indent=2)
+            logger.info(f"💾 中国测试详细报告已保存到 china_test_summary.json")
+            
+        else:
+            logger.warning("⚠️ 没有节点通过基础测活，跳过中国翻墙测试")
+            results = basic_results
+        
+        # 3. 过滤可用节点（优先中国翻墙适用的节点）
         working_results = [r for r in results if r['success']]
-        logger.info(f"✅ 找到 {len(working_results)} 个可用节点")
+        china_usable_results = [r for r in results if r.get('china_usable', False)]
+        
+        logger.info(f"✅ 基础可用节点: {len(working_results)} 个")
+        logger.info(f"🇨🇳 中国翻墙适用节点: {len(china_usable_results)} 个")
+        
+        # 如果有中国适用的节点，优先使用这些节点
+        if china_usable_results:
+            # 按中国评分排序，取最好的节点
+            china_usable_results.sort(key=lambda x: x.get('china_score', 0), reverse=True)
+            final_results = china_usable_results
+            logger.info(f"🎯 优先保存 {len(final_results)} 个中国翻墙适用节点")
+        else:
+            # 如果没有中国适用的节点，使用基础可用节点
+            final_results = working_results
+            logger.info(f"⚠️ 未找到中国翻墙适用节点，使用 {len(final_results)} 个基础可用节点")
         
         if not working_results:
             logger.error("❌ 没有可用的节点")
