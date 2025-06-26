@@ -16,94 +16,125 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-        cache: 'pip'
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install aiohttp pyyaml requests urllib3 PySocks geoip2
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install aiohttp pyyaml requests urllib3 PySocks geoip2
 
-    - name: Create nodes directory
-      run: mkdir -p nodes
+      - name: Create nodes directory
+        run: mkdir -p nodes
 
-    - name: Run node collector
-      run: |
-        echo "🚀 检查 node_collector.py 是否存在..."
-        if [ -f "小火箭/node_collector.py" ]; then
-          echo "✅ 找到 小火箭/node_collector.py"
-          cd 小火箭
-        elif [ -f "node_collector.py" ]; then
-          echo "✅ 找到根目录 node_collector.py"
-        else
-          echo "❌ 未找到 node_collector.py 文件"
-          exit 1
-        fi
+      - name: Run node collector
+        run: |
+          echo "🚀 检查 node_collector.py 是否存在..."
+          if [ -f "小火箭/node_collector.py" ]; then
+            echo "✅ 找到 小火箭/node_collector.py"
+            cd 小火箭
+          elif [ -f "node_collector.py" ]; then
+            echo "✅ 找到根目录 node_collector.py"
+          else
+            echo "❌ 未找到 node_collector.py 文件"
+            exit 1
+          fi
 
-        # 检查 simple_node_checker.py 是否存在
-        if [ ! -f "simple_node_checker.py" ]; then
-          echo "⚠️ 缺少 simple_node_checker.py，创建基础版本..."
-          echo "" > simple_node_checker.py
-        fi
+          if [ ! -f "simple_node_checker.py" ]; then
+            echo "⚠️ 缺少 simple_node_checker.py，创建基础版本..."
+            echo "" > simple_node_checker.py
+          fi
 
-        # 检查 china_node_tester.py 是否存在
-        if [ ! -f "china_node_tester.py" ]; then
-          echo "⚠️ 缺少 china_node_tester.py，创建基础版本..."
-          echo "" > china_node_tester.py
-        fi
+          if [ ! -f "china_node_tester.py" ]; then
+            echo "⚠️ 缺少 china_node_tester.py，创建基础版本..."
+            echo "" > china_node_tester.py
+          fi
 
-        echo "🚀 开始运行节点收集器..."
-        python node_collector.py
+          echo "🚀 开始运行节点收集器..."
+          python node_collector.py
 
-    - name: Check generated files
-      run: |
-        ls -la 小火箭/nodes/ 2>/dev/null || ls -la nodes/ 2>/dev/null || echo "No nodes directory found"
+      - name: Check generated files
+        run: |
+          ls -la 小火箭/nodes/ 2>/dev/null || ls -la nodes/ 2>/dev/null || echo "No nodes directory found"
 
-    - name: Move files to root nodes directory
-      run: |
-        if [ -d "小火箭/nodes" ]; then
-          cp -r 小火箭/nodes/* nodes/ 2>/dev/null || echo "No files to copy from 小火箭/nodes"
-        fi
-        if [ -d "nodes" ] && [ "$(ls -A nodes 2>/dev/null)" ]; then
-          echo "Files already in nodes directory"
-        else
-          echo "No valid nodes directory found"
-        fi
+      - name: Move files to root nodes directory
+        run: |
+          if [ -d "小火箭/nodes" ]; then
+            cp -r 小火箭/nodes/* nodes/ 2>/dev/null || echo "No files to copy from 小火箭/nodes"
+          fi
+          if [ -d "nodes" ] && [ "$(ls -A nodes 2>/dev/null)" ]; then
+            echo "Files already in nodes directory"
+          else
+            echo "No valid nodes directory found"
+          fi
 
-    - name: Generate README for nodes
-      run: |
-        cat > nodes/README.md << 'EOF'
+      - name: Generate README for nodes
+        run: |
+          cat > nodes/README.md << 'EOF'
+# 免费代理节点
 
+- 🔄 **更新时间**: PLACEHOLDER
+- 🌐 **数据来源**: 60+ 免费节点订阅源
+- ✅ **测活检测**: 自动筛选可用节点
+- 🚀 **更新频率**: 每6小时自动更新
 
-    - name: Update node counts in README
-      run: |
-        V2RAY_COUNT=$(wc -l < nodes/v2ray.txt 2>/dev/null || echo 0)
-        SS_COUNT=$(wc -l < nodes/shadowsocks.txt 2>/dev/null || echo 0)
-        TROJAN_COUNT=$(wc -l < nodes/trojan.txt 2>/dev/null || echo 0)
-        CLASH_COUNT=$(grep -c "name:" nodes/clash.yaml 2>/dev/null || echo 0)
-        TOTAL_COUNT=$((V2RAY_COUNT + SS_COUNT + TROJAN_COUNT))
-        sed -i "s/- 🔄 \*\*更新时间\*\*:.*/- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')/" nodes/README.md
-        sed -i "/## 📊 节点统计/a\\- 📈 **总节点数**: $TOTAL_COUNT\\n- 🎯 **V2Ray节点**: $V2RAY_COUNT\\n- 🛡️ **Shadowsocks节点**: $SS_COUNT\\n- 🔐 **Trojan节点**: $TROJAN_COUNT\\n- ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
+## 📋 订阅链接
 
-- name: Create release on significant updates
-  if: github.event_name == 'schedule'
-  run: |
-    TOTAL_NODES=0
-    [ -f "nodes/v2ray.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/v2ray.txt)))
-    [ -f "nodes/shadowsocks.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/shadowsocks.txt)))
-    [ -f "nodes/trojan.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/trojan.txt)))
-    if [ $TOTAL_NODES -gt 50 ]; then
-      RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
-      RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
-      cat > release_notes.md << 'EOF'
+### V2Ray
+https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
+
+### Clash
+https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
+
+### Shadowsocks
+https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
+
+### Trojan
+https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
+EOF
+
+      - name: Update node counts in README
+        run: |
+          V2RAY_COUNT=$(wc -l < nodes/v2ray.txt 2>/dev/null || echo 0)
+          SS_COUNT=$(wc -l < nodes/shadowsocks.txt 2>/dev/null || echo 0)
+          TROJAN_COUNT=$(wc -l < nodes/trojan.txt 2>/dev/null || echo 0)
+          CLASH_COUNT=$(grep -c "name:" nodes/clash.yaml 2>/dev/null || echo 0)
+          TOTAL_COUNT=$((V2RAY_COUNT + SS_COUNT + TROJAN_COUNT))
+          sed -i "s/- 🔄 \*\*更新时间\*\*:.*/- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')/" nodes/README.md
+          sed -i "/## 📊 节点统计/a\\- 📈 **总节点数**: $TOTAL_COUNT\\n- 🎯 **V2Ray节点**: $V2RAY_COUNT\\n- 🛡️ **Shadowsocks节点**: $SS_COUNT\\n- 🔐 **Trojan节点**: $TROJAN_COUNT\\n- ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add nodes/
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S UTC')
+          git commit -m "🚀 自动更新节点 - $TIMESTAMP"
+          git push
+
+      - name: Create release on significant updates
+        if: github.event_name == 'schedule'
+        run: |
+          TOTAL_NODES=0
+          [ -f "nodes/v2ray.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/v2ray.txt)))
+          [ -f "nodes/shadowsocks.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/shadowsocks.txt)))
+          [ -f "nodes/trojan.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/trojan.txt)))
+          if [ $TOTAL_NODES -gt 50 ]; then
+            RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
+            RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
+            cat > release_notes.md << 'EOF'
 ## 📊 本次更新统计
 
 - 🎯 **总节点数**: PLACEHOLDER
@@ -117,8 +148,17 @@ jobs:
 - Shadowsocks: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
 - Trojan: https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
 EOF
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release_notes.md nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release_notes.md nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
-    fi
-  env:
-    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Clean up old releases
+        if: github.event_name == 'schedule'
+        run: |
+          gh release list --limit 100 --json tagName,createdAt | jq -r 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' | while read tag; do
+            echo "Deleting old release: $tag"
+            gh release delete "$tag" --yes || echo "Failed to delete $tag"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
