@@ -1,0 +1,39 @@
+name: 更新节点
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # 每6小时运行一次
+  workflow_dispatch:  # 手动触发
+
+jobs:
+  update-nodes:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        pip install requests pyyaml
+        
+    - name: Update nodes
+      run: |
+        python update.py
+        
+    - name: Update README timestamp
+      run: |
+        sed -i "s/\*\*最后更新\*\*:.*/\*\*最后更新\*\*: \`$(date -u '+%Y-%m-%d %H:%M:%S UTC')\`/" README.md
+        
+    - name: Commit and push
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .
+        git commit -m "🔄 自动更新节点 - $(date -u '+%Y-%m-%d %H:%M:%S UTC')" || exit 0
+        git push
