@@ -1,0 +1,269 @@
+name: Node Collector and Testing
+
+on:
+  schedule:
+    # 每6小时运行一次
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    # 手动触发
+  push:
+    branches: [ main ]
+    paths:
+      - 'node_collector.py'
+      - 'simple_node_checker.py'
+      - '.github/workflows/node_collector.yml'
+
+jobs:
+  collect-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install aiohttp pyyaml requests urllib3 PySocks
+        
+    - name: Create nodes directory
+      run: |
+        mkdir -p nodes
+        
+    - name: Run node collector
+      run: |
+        cd 小火箭
+        python node_collector.py
+        
+    - name: Check generated files
+      run: |
+        ls -la 小火箭/nodes/ || echo "No nodes directory found"
+        
+    - name: Move files to root nodes directory
+      run: |
+        if [ -d "小火箭/nodes" ]; then
+          cp -r 小火箭/nodes/* nodes/ 2>/dev/null || echo "No files to copy"
+        fi
+        
+    - name: Generate README for nodes
+      run: |
+        cat > nodes/README.md << 'EOF'
+        # 免费代理节点
+
+        [![Update Status](https://github.com/${{ github.repository }}/workflows/Node%20Collector%20and%20Testing/badge.svg)](https://github.com/${{ github.repository }}/actions)
+        [![Telegram](https://img.shields.io/badge/📱_TG频道-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/fq521)
+
+        ## 📊 节点统计
+
+        - 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')
+        - 🌐 **数据来源**: 60+ 免费节点订阅源
+        - ✅ **测活检测**: 自动筛选可用节点
+        - 🚀 **更新频率**: 每6小时自动更新
+
+        ## 📋 订阅链接
+
+        ### V2Ray 订阅
+        ```
+        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
+        ```
+
+        ### Clash 订阅
+        ```
+        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
+        ```
+
+        ### Shadowsocks 订阅
+        ```
+        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
+        ```
+
+        ### Trojan 订阅
+        ```
+        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
+        ```
+
+        ## 📱 使用方法
+
+        ### V2Ray/V2RayN
+        1. 复制V2Ray订阅链接
+        2. 在客户端中添加订阅
+        3. 更新订阅即可使用
+
+        ### Clash/ClashX
+        1. 复制Clash订阅链接
+        2. 在配置文件中添加订阅
+        3. 更新配置即可使用
+
+        ### Shadowrocket
+        1. 复制对应协议的订阅链接
+        2. 在应用中添加节点
+        3. 连接使用
+
+        ## ⚠️ 免责声明
+
+        - 本项目仅供学习和研究使用
+        - 请遵守当地法律法规
+        - 不得用于非法用途
+        - 使用本服务即表示同意承担相应风险
+
+        ## 🔗 相关链接
+
+        - [Telegram频道](https://t.me/fq521) - 获取最新节点信息
+        - [项目主页](https://github.com/${{ github.repository }}) - 查看源代码
+        - [Issues](https://github.com/${{ github.repository }}/issues) - 反馈问题
+
+        ---
+        
+        **⭐ 如果这个项目对你有帮助，请给个Star支持一下！**
+        EOF
+        
+    - name: Update node counts in README
+      run: |
+        if [ -f "nodes/v2ray.txt" ]; then
+          V2RAY_COUNT=$(wc -l < nodes/v2ray.txt)
+        else
+          V2RAY_COUNT=0
+        fi
+        
+        if [ -f "nodes/shadowsocks.txt" ]; then
+          SS_COUNT=$(wc -l < nodes/shadowsocks.txt)
+        else
+          SS_COUNT=0
+        fi
+        
+        if [ -f "nodes/trojan.txt" ]; then
+          TROJAN_COUNT=$(wc -l < nodes/trojan.txt)
+        else
+          TROJAN_COUNT=0
+        fi
+        
+        if [ -f "nodes/clash.yaml" ]; then
+          CLASH_COUNT=$(grep -c "name:" nodes/clash.yaml || echo "0")
+        else
+          CLASH_COUNT=0
+        fi
+        
+        TOTAL_COUNT=$((V2RAY_COUNT + SS_COUNT + TROJAN_COUNT))
+        
+        # 更新README中的统计信息
+        sed -i "s/- 🔄 \*\*更新时间\*\*:.*/- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')/" nodes/README.md
+        sed -i "/## 📊 节点统计/a\\- 📈 **总节点数**: $TOTAL_COUNT\\n- 🎯 **V2Ray节点**: $V2RAY_COUNT\\n- 🛡️ **Shadowsocks节点**: $SS_COUNT\\n- 🔐 **Trojan节点**: $TROJAN_COUNT\\n- ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
+        
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # 添加所有更改
+        git add nodes/
+        
+        # 检查是否有更改
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+        
+        # 提交更改
+        TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S UTC')
+        git commit -m "🚀 自动更新节点 - $TIMESTAMP
+
+        📊 本次更新统计:
+        $(if [ -f "nodes/v2ray.txt" ]; then echo "- V2Ray: $(wc -l < nodes/v2ray.txt) 个节点"; fi)
+        $(if [ -f "nodes/shadowsocks.txt" ]; then echo "- Shadowsocks: $(wc -l < nodes/shadowsocks.txt) 个节点"; fi)
+        $(if [ -f "nodes/trojan.txt" ]; then echo "- Trojan: $(wc -l < nodes/trojan.txt) 个节点"; fi)
+        $(if [ -f "nodes/clash.yaml" ]; then echo "- Clash: $(grep -c 'name:' nodes/clash.yaml || echo '0') 个代理"; fi)
+        
+        🔄 数据来源: 60+ 免费节点订阅源
+        ✅ 测活状态: 已通过连通性测试
+        📱 TG频道: https://t.me/fq521"
+        
+        # 推送更改
+        git push
+        
+    - name: Create release on significant updates
+      if: github.event_name == 'schedule'
+      run: |
+        # 检查是否有足够的节点创建release
+        TOTAL_NODES=0
+        if [ -f "nodes/v2ray.txt" ]; then
+          TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/v2ray.txt)))
+        fi
+        if [ -f "nodes/shadowsocks.txt" ]; then
+          TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/shadowsocks.txt)))
+        fi
+        if [ -f "nodes/trojan.txt" ]; then
+          TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/trojan.txt)))
+        fi
+        
+        if [ $TOTAL_NODES -gt 50 ]; then
+          RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
+          RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
+          
+          # 创建release说明
+          cat > release_notes.md << EOF
+        ## 📊 本次更新统计
+        
+        - 🎯 **总节点数**: $TOTAL_NODES
+        - 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')
+        - ✅ **测活状态**: 已通过连通性测试
+        
+        ## 📋 订阅链接
+        
+        ### V2Ray 订阅
+        \`\`\`
+        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
+        \`\`\`
+        
+        ### Clash 订阅
+        \`\`\`
+        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
+        \`\`\`
+        
+        ### Shadowsocks 订阅
+        \`\`\`
+        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
+        \`\`\`
+        
+        ### Trojan 订阅
+        \`\`\`
+        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
+        \`\`\`
+        
+        ## 📱 获取更多
+        
+        - [Telegram频道](https://t.me/fq521) - 实时节点更新
+        - [项目主页](https://github.com/${{ github.repository }}) - 查看源代码
+        
+        ---
+        **⚠️ 仅供学习研究使用，请遵守当地法律法规**
+        EOF
+          
+          # 使用GitHub CLI创建release
+          gh release create "$RELEASE_TAG" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release_notes.md \
+            nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Clean up old releases
+      if: github.event_name == 'schedule'
+      run: |
+        # 保留最新的5个release，删除旧的
+        gh release list --limit 100 --json tagName,createdAt | \
+        jq -r 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' | \
+        while read tag; do
+          echo "Deleting old release: $tag"
+          gh release delete "$tag" --yes || echo "Failed to delete $tag"
+        done
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
