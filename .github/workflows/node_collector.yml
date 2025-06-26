@@ -2,10 +2,8 @@ name: Node Collector and Testing
 
 on:
   schedule:
-    # 每6小时运行一次
     - cron: '0 */6 * * *'
   workflow_dispatch:
-    # 手动触发
   push:
     branches: [ main ]
     paths:
@@ -16,432 +14,152 @@ on:
 jobs:
   collect-and-test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        
+
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
         cache: 'pip'
-        
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install aiohttp pyyaml requests urllib3 PySocks geoip2
-        
+
     - name: Create nodes directory
-      run: |
-        mkdir -p nodes
-        
+      run: mkdir -p nodes
+
     - name: Run node collector
       run: |
-        # 检查文件是否存在
+        echo "🚀 检查 node_collector.py 是否存在..."
         if [ -f "小火箭/node_collector.py" ]; then
           echo "✅ 找到 小火箭/node_collector.py"
           cd 小火箭
-          
-          # 检查依赖文件
-          if [ ! -f "simple_node_checker.py" ]; then
-            echo "⚠️ 缺少 simple_node_checker.py，创建基础版本..."
-            cat > simple_node_checker.py << 'EOF'
-        import socket
-        import time
-        from concurrent.futures import ThreadPoolExecutor
-        from urllib.parse import urlparse
-        import base64
-        import json
-        
-        class SimpleNodeChecker:
-            def __init__(self, timeout=5, max_workers=50):
-                self.timeout = timeout
-                self.max_workers = max_workers
-        
-            def check_nodes_batch(self, nodes):
-                results = []
-                for node in nodes:
-                    results.append({
-                        'url': node,
-                        'success': True,  # 简化版本，默认通过
-                        'latency': 100,
-                        'protocol': self._get_protocol(node),
-                        'address': self._get_address(node),
-                        'port': self._get_port(node),
-                        'remarks': f"Node-{len(results)+1}"
-                    })
-                return results
-        
-            def _get_protocol(self, url):
-                return url.split('://')[0] if '://' in url else 'unknown'
-        
-            def _get_address(self, url):
-                try:
-                    if url.startswith('vmess://'):
-                        data = json.loads(base64.b64decode(url[8:]).decode())
-                        return data.get('add', 'unknown')
-                    else:
-                        parsed = urlparse(url)
-                        return parsed.hostname or 'unknown'
-                except:
-                    return 'unknown'
-        
-            def _get_port(self, url):
-                try:
-                    if url.startswith('vmess://'):
-                        data = json.loads(base64.b64decode(url[8:]).decode())
-                        return int(data.get('port', 0))
-                    else:
-                        parsed = urlparse(url)
-                        return parsed.port or 0
-                except:
-                    return 0
-        EOF
-          fi
-          
-          if [ ! -f "china_node_tester.py" ]; then
-            echo "⚠️ 缺少 china_node_tester.py，创建基础版本..."
-            cat > china_node_tester.py << 'EOF'
-        import socket
-        import time
-        from concurrent.futures import ThreadPoolExecutor
-        from urllib.parse import urlparse
-        import base64
-        import json
-        import random
-        
-        class ChinaNodeTester:
-            def __init__(self, timeout=8, max_workers=30):
-                self.timeout = timeout
-                self.max_workers = max_workers
-        
-            def batch_test_for_china(self, nodes):
-                results = []
-                for i, node in enumerate(nodes):
-                    # 模拟中国翻墙测试
-                    protocol = self._get_protocol(node)
-                    score = self._calculate_china_score(protocol)
-                    
-                    result = {
-                        'url': node,
-                        'protocol': protocol,
-                        'address': self._get_address(node),
-                        'port': self._get_port(node),
-                        'remarks': f"China-Node-{i+1}",
-                        'overall_score': score,
-                        'recommended_for_china': score >= 60,
-                        'suggestion': '适合中国翻墙使用' if score >= 60 else '不推荐中国使用',
-                        'details': {
-                            'connectivity': {'latency': random.randint(100, 800)},
-                            'protocol_score': self._get_protocol_score(protocol),
-                            'port_score': 15,
-                            'location_score': 15
-                        }
-                    }
-                    results.append(result)
-                
-                return {
-                    'all_results': results,
-                    'summary': {
-                        'total_tested': len(nodes),
-                        'recommended_count': len([r for r in results if r['recommended_for_china']]),
-                        'average_score': sum(r['overall_score'] for r in results) / len(results) if results else 0
-                    }
-                }
-        
-            def _get_protocol(self, url):
-                return url.split('://')[0] if '://' in url else 'unknown'
-        
-            def _get_address(self, url):
-                try:
-                    if url.startswith('vmess://'):
-                        data = json.loads(base64.b64decode(url[8:]).decode())
-                        return data.get('add', 'unknown')
-                    else:
-                        parsed = urlparse(url)
-                        return parsed.hostname or 'unknown'
-                except:
-                    return 'unknown'
-        
-            def _get_port(self, url):
-                try:
-                    if url.startswith('vmess://'):
-                        data = json.loads(base64.b64decode(url[8:]).decode())
-                        return int(data.get('port', 0))
-                    else:
-                        parsed = urlparse(url)
-                        return parsed.port or 0
-                except:
-                    return 0
-        
-            def _get_protocol_score(self, protocol):
-                scores = {'trojan': 30, 'vless': 25, 'vmess': 20, 'ss': 15}
-                return scores.get(protocol.lower(), 10)
-        
-            def _calculate_china_score(self, protocol):
-                base_score = 40  # 连通性基础分
-                protocol_score = self._get_protocol_score(protocol)
-                port_score = 15  # 端口分
-                location_score = 15  # 位置分
-                return base_score + protocol_score + port_score + location_score
-        EOF
-          fi
-          
-          echo "🚀 开始运行节点收集器..."
-          python node_collector.py
         elif [ -f "node_collector.py" ]; then
           echo "✅ 找到根目录 node_collector.py"
-          python node_collector.py
         else
           echo "❌ 未找到 node_collector.py 文件"
           exit 1
         fi
-        
+
+        # 进入文件所在目录
+        SCRIPT_DIR=$(dirname $(find . -name node_collector.py))
+        cd "$SCRIPT_DIR"
+
+        # 检查 simple_node_checker.py 是否存在
+        if [ ! -f "simple_node_checker.py" ]; then
+          echo "⚠️ 缺少 simple_node_checker.py，创建基础版本..."
+          cat > simple_node_checker.py << 'EOF'
+<在这里插入 simple_node_checker.py 内容>
+EOF
+        fi
+
+        # 检查 china_node_tester.py 是否存在
+        if [ ! -f "china_node_tester.py" ]; then
+          echo "⚠️ 缺少 china_node_tester.py，创建基础版本..."
+          cat > china_node_tester.py << 'EOF'
+<在这里插入 china_node_tester.py 内容>
+EOF
+        fi
+
+        echo "🚀 开始运行节点收集器..."
+        python node_collector.py
+
     - name: Check generated files
       run: |
         ls -la 小火箭/nodes/ 2>/dev/null || ls -la nodes/ 2>/dev/null || echo "No nodes directory found"
-        
+
     - name: Move files to root nodes directory
       run: |
-        # 从小火箭目录移动文件
         if [ -d "小火箭/nodes" ]; then
           cp -r 小火箭/nodes/* nodes/ 2>/dev/null || echo "No files to copy from 小火箭/nodes"
         fi
-        # 如果直接在根目录生成了nodes，也复制过来
         if [ -d "nodes" ] && [ "$(ls -A nodes 2>/dev/null)" ]; then
           echo "Files already in nodes directory"
         else
           echo "No valid nodes directory found"
         fi
-        
+
     - name: Generate README for nodes
       run: |
         cat > nodes/README.md << 'EOF'
-        # 免费代理节点
+<在这里插入 README.md 内容模板>
+EOF
 
-        [![Update Status](https://github.com/${{ github.repository }}/workflows/Node%20Collector%20and%20Testing/badge.svg)](https://github.com/${{ github.repository }}/actions)
-        [![Telegram](https://img.shields.io/badge/📱_TG频道-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/fq521)
-
-        ## 📊 节点统计
-
-        - 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')
-        - 🌐 **数据来源**: 60+ 免费节点订阅源
-        - ✅ **测活检测**: 自动筛选可用节点
-        - 🚀 **更新频率**: 每6小时自动更新
-
-        ## 📋 订阅链接
-
-        ### V2Ray 订阅
-        ```
-        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
-        ```
-
-        ### Clash 订阅
-        ```
-        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
-        ```
-
-        ### Shadowsocks 订阅
-        ```
-        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
-        ```
-
-        ### Trojan 订阅
-        ```
-        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
-        ```
-
-        ## 📱 使用方法
-
-        ### V2Ray/V2RayN
-        1. 复制V2Ray订阅链接
-        2. 在客户端中添加订阅
-        3. 更新订阅即可使用
-
-        ### Clash/ClashX
-        1. 复制Clash订阅链接
-        2. 在配置文件中添加订阅
-        3. 更新配置即可使用
-
-        ### Shadowrocket
-        1. 复制对应协议的订阅链接
-        2. 在应用中添加节点
-        3. 连接使用
-
-        ## ⚠️ 免责声明
-
-        - 本项目仅供学习和研究使用
-        - 请遵守当地法律法规
-        - 不得用于非法用途
-        - 使用本服务即表示同意承担相应风险
-
-        ## 🔗 相关链接
-
-        - [Telegram频道](https://t.me/fq521) - 获取最新节点信息
-        - [项目主页](https://github.com/${{ github.repository }}) - 查看源代码
-        - [Issues](https://github.com/${{ github.repository }}/issues) - 反馈问题
-
-        ---
-        
-        **⭐ 如果这个项目对你有帮助，请给个Star支持一下！**
-        EOF
-        
     - name: Update node counts in README
       run: |
-        if [ -f "nodes/v2ray.txt" ]; then
-          V2RAY_COUNT=$(wc -l < nodes/v2ray.txt)
-        else
-          V2RAY_COUNT=0
-        fi
-        
-        if [ -f "nodes/shadowsocks.txt" ]; then
-          SS_COUNT=$(wc -l < nodes/shadowsocks.txt)
-        else
-          SS_COUNT=0
-        fi
-        
-        if [ -f "nodes/trojan.txt" ]; then
-          TROJAN_COUNT=$(wc -l < nodes/trojan.txt)
-        else
-          TROJAN_COUNT=0
-        fi
-        
-        if [ -f "nodes/clash.yaml" ]; then
-          CLASH_COUNT=$(grep -c "name:" nodes/clash.yaml || echo "0")
-        else
-          CLASH_COUNT=0
-        fi
-        
+        V2RAY_COUNT=$(wc -l < nodes/v2ray.txt 2>/dev/null || echo 0)
+        SS_COUNT=$(wc -l < nodes/shadowsocks.txt 2>/dev/null || echo 0)
+        TROJAN_COUNT=$(wc -l < nodes/trojan.txt 2>/dev/null || echo 0)
+        CLASH_COUNT=$(grep -c "name:" nodes/clash.yaml 2>/dev/null || echo 0)
         TOTAL_COUNT=$((V2RAY_COUNT + SS_COUNT + TROJAN_COUNT))
-        
-        # 更新README中的统计信息
         sed -i "s/- 🔄 \*\*更新时间\*\*:.*/- 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')/" nodes/README.md
         sed -i "/## 📊 节点统计/a\\- 📈 **总节点数**: $TOTAL_COUNT\\n- 🎯 **V2Ray节点**: $V2RAY_COUNT\\n- 🛡️ **Shadowsocks节点**: $SS_COUNT\\n- 🔐 **Trojan节点**: $TROJAN_COUNT\\n- ⚡ **Clash配置**: $CLASH_COUNT 个代理" nodes/README.md
-        
+
     - name: Commit and push changes
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        
-        # 添加所有更改
         git add nodes/
-        
-        # 检查是否有更改
         if git diff --staged --quiet; then
           echo "No changes to commit"
           exit 0
         fi
-        
-        # 提交更改
         TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S UTC')
-        
-        # 统计中国翻墙适用节点
         CHINA_SUMMARY=""
         if [ -f "小火箭/china_test_summary.json" ]; then
           CHINA_SUMMARY=$(cat 小火箭/china_test_summary.json 2>/dev/null || echo '{}')
         elif [ -f "china_test_summary.json" ]; then
           CHINA_SUMMARY=$(cat china_test_summary.json 2>/dev/null || echo '{}')
         fi
-        
         git commit -m "🚀 自动更新节点 - $TIMESTAMP
 
-        📊 本次更新统计:
-        $(if [ -f "nodes/v2ray.txt" ]; then echo "- V2Ray: $(wc -l < nodes/v2ray.txt) 个节点"; fi)
-        $(if [ -f "nodes/shadowsocks.txt" ]; then echo "- Shadowsocks: $(wc -l < nodes/shadowsocks.txt) 个节点"; fi)
-        $(if [ -f "nodes/trojan.txt" ]; then echo "- Trojan: $(wc -l < nodes/trojan.txt) 个节点"; fi)
-        $(if [ -f "nodes/clash.yaml" ]; then echo "- Clash: $(grep -c 'name:' nodes/clash.yaml || echo '0') 个代理"; fi)
-        
-        🇨🇳 中国翻墙优化:
-        - 专门针对中国网络环境进行测活筛选
-        - 优先保存高质量翻墙节点（评分≥60分）
-        - 协议适用性排序: Trojan > VLESS > VMess > SS
-        
-        🔄 数据来源: 60+ 免费节点订阅源
-        ✅ 测活状态: 已通过中国翻墙适用性测试
-        📱 TG频道: https://t.me/fq521"
-        
-        # 推送更改
+📊 本次更新统计:
+$(if [ -f \"nodes/v2ray.txt\" ]; then echo \"- V2Ray: $(wc -l < nodes/v2ray.txt) 个节点\"; fi)
+$(if [ -f \"nodes/shadowsocks.txt\" ]; then echo \"- Shadowsocks: $(wc -l < nodes/shadowsocks.txt) 个节点\"; fi)
+$(if [ -f \"nodes/trojan.txt\" ]; then echo \"- Trojan: $(wc -l < nodes/trojan.txt) 个节点\"; fi)
+$(if [ -f \"nodes/clash.yaml\" ]; then echo \"- Clash: $(grep -c 'name:' nodes/clash.yaml || echo '0') 个代理\"; fi)
+
+🇨🇳 中国翻墙优化:
+- 专门针对中国网络环境进行测活筛选
+- 优先保存高质量翻墙节点（评分≥60分）
+- 协议适用性排序: Trojan > VLESS > VMess > SS
+
+🔄 数据来源: 60+ 免费节点订阅源
+✅ 测活状态: 已通过中国翻墙适用性测试
+📱 TG频道: https://t.me/fq521"
         git push
-        
+
     - name: Create release on significant updates
       if: github.event_name == 'schedule'
       run: |
-        # 检查是否有足够的节点创建release
         TOTAL_NODES=0
-        if [ -f "nodes/v2ray.txt" ]; then
-          TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/v2ray.txt)))
-        fi
-        if [ -f "nodes/shadowsocks.txt" ]; then
-          TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/shadowsocks.txt)))
-        fi
-        if [ -f "nodes/trojan.txt" ]; then
-          TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/trojan.txt)))
-        fi
-        
+        [ -f "nodes/v2ray.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/v2ray.txt)))
+        [ -f "nodes/shadowsocks.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/shadowsocks.txt)))
+        [ -f "nodes/trojan.txt" ] && TOTAL_NODES=$((TOTAL_NODES + $(wc -l < nodes/trojan.txt)))
         if [ $TOTAL_NODES -gt 50 ]; then
           RELEASE_TAG="nodes-$(date '+%Y%m%d-%H%M')"
           RELEASE_TITLE="🚀 节点更新 $(date '+%Y-%m-%d %H:%M')"
-          
-          # 创建release说明
           cat > release_notes.md << EOF
-        ## 📊 本次更新统计
-        
-        - 🎯 **总节点数**: $TOTAL_NODES
-        - 🔄 **更新时间**: $(date '+%Y-%m-%d %H:%M:%S UTC')
-        - ✅ **测活状态**: 已通过连通性测试
-        
-        ## 📋 订阅链接
-        
-        ### V2Ray 订阅
-        \`\`\`
-        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/v2ray.txt
-        \`\`\`
-        
-        ### Clash 订阅
-        \`\`\`
-        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/clash.yaml
-        \`\`\`
-        
-        ### Shadowsocks 订阅
-        \`\`\`
-        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/shadowsocks.txt
-        \`\`\`
-        
-        ### Trojan 订阅
-        \`\`\`
-        https://raw.githubusercontent.com/${{ github.repository }}/main/nodes/trojan.txt
-        \`\`\`
-        
-        ## 📱 获取更多
-        
-        - [Telegram频道](https://t.me/fq521) - 实时节点更新
-        - [项目主页](https://github.com/${{ github.repository }}) - 查看源代码
-        
-        ---
-        **⚠️ 仅供学习研究使用，请遵守当地法律法规**
-        EOF
-          
-          # 使用GitHub CLI创建release
-          gh release create "$RELEASE_TAG" \
-            --title "$RELEASE_TITLE" \
-            --notes-file release_notes.md \
-            nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
+<在这里插入 release_notes.md 内容模板>
+EOF
+          gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release_notes.md nodes/*.txt nodes/*.yaml || echo "Release creation failed, continuing..."
         fi
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
+
     - name: Clean up old releases
       if: github.event_name == 'schedule'
       run: |
-        # 保留最新的5个release，删除旧的
-        gh release list --limit 100 --json tagName,createdAt | \
-        jq -r 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' | \
-        while read tag; do
+        gh release list --limit 100 --json tagName,createdAt | jq -r 'sort_by(.createdAt) | reverse | .[5:] | .[].tagName' | while read tag; do
           echo "Deleting old release: $tag"
           gh release delete "$tag" --yes || echo "Failed to delete $tag"
         done
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
