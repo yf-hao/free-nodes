@@ -16,8 +16,8 @@
 - **Trojan**: `https://raw.githubusercontent.com/xyfqzy/free-nodes/main/nodes/trojan.txt`
 
 ### 📱 客户端推荐
-- **Windows**: [v2rayN](https://github.com/2dust/v2rayN/releases) | [Clash for Windows](https://github.com/Fndroid/clash_for_windows_pkg/releases)
-- **Android**: [v2rayNG](https://github.com/2dust/v2rayNG/releases) | [Clash for Android](https://github.com/Kr328/ClashForAndroid/releases)
+- **Windows**: [v2rayN](https://github.com/2dust/v2rayN/releases) 
+- **Android**: [v2rayNG](https://github.com/2dust/v2rayNG/releases) 
 - **iOS**: Shadowrocket | Quantumult X | Surge
 - **Mac**: [ClashX](https://github.com/yichengchen/clashX/releases) | [V2rayU](https://github.com/yanue/V2rayU/releases)
 - **Linux**: [v2ray-core](https://github.com/v2fly/v2ray-core/releases) | [clash](https://github.com/Dreamacro/clash/releases)
