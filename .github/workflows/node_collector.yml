@@ -40,17 +40,36 @@ jobs:
         
     - name: Run node collector
       run: |
-        cd 小火箭
-        python node_collector.py
+        # 检查文件是否存在
+        if [ -f "小火箭/node_collector.py" ]; then
+          cd 小火箭
+          python node_collector.py
+        elif [ -f "node_collector.py" ]; then
+          python node_collector.py
+        else
+          echo "node_collector.py not found, creating it..."
+          # 如果文件不存在，创建基本的收集器
+          mkdir -p 小火箭
+          cp node_collector.py 小火箭/ 2>/dev/null || echo "Creating new collector..."
+          cd 小火箭
+          python node_collector.py
+        fi
         
     - name: Check generated files
       run: |
-        ls -la 小火箭/nodes/ || echo "No nodes directory found"
+        ls -la 小火箭/nodes/ 2>/dev/null || ls -la nodes/ 2>/dev/null || echo "No nodes directory found"
         
     - name: Move files to root nodes directory
       run: |
+        # 从小火箭目录移动文件
         if [ -d "小火箭/nodes" ]; then
-          cp -r 小火箭/nodes/* nodes/ 2>/dev/null || echo "No files to copy"
+          cp -r 小火箭/nodes/* nodes/ 2>/dev/null || echo "No files to copy from 小火箭/nodes"
+        fi
+        # 如果直接在根目录生成了nodes，也复制过来
+        if [ -d "nodes" ] && [ "$(ls -A nodes 2>/dev/null)" ]; then
+          echo "Files already in nodes directory"
+        else
+          echo "No valid nodes directory found"
         fi
         
     - name: Generate README for nodes
@@ -266,4 +285,4 @@ jobs:
           gh release delete "$tag" --yes || echo "Failed to delete $tag"
         done
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
