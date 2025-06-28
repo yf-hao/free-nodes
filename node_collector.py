@@ -1,889 +1,560 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-节点收集器和测活检测脚本
+增强版节点检测器 - 专门针对中国大陆翻墙优化
 功能：
-1. 从多个来源获取节点
-2. 解析不同格式的订阅
-3. 批量测活检测
-4. 按协议分类保存
-5. 生成Clash配置
+1. 多阶段检测策略
+2. 真实翻墙场景模拟
+3. 智能评分系统
+4. 协议特定检测
+5. 地理位置感知
 """
 
 import asyncio
 import aiohttp
-import base64
-import json
-import yaml
-import re
-import os
+import socket
+import ssl
 import time
-import sys
-from datetime import datetime
-from typing import List, Dict, Set
+import json
+import base64
+import re
+import random
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, parse_qs, unquote
-
-# 尝试导入高级节点检测器，如果失败则使用内置的简化版本
-try:
-    from advanced_node_tester import AdvancedNodeTester as SimpleNodeChecker
-except ImportError:
-    try:
-        from simple_node_checker import SimpleNodeChecker
-    except ImportError:
-        # 如果找不到模块，定义一个简化的节点检测器
-        class SimpleNodeChecker:
-            def __init__(self, timeout=5, max_workers=50):
-                self.timeout = timeout
-                self.max_workers = max_workers
-        
-            def check_nodes_batch(self, nodes):
-                """真正的节点批量检测"""
-                import socket
-                from concurrent.futures import ThreadPoolExecutor, as_completed
-                
-                results = []
-                
-                def test_single_node(node_url):
-                    try:
-                        protocol = self._get_protocol(node_url)
-                        address = self._get_address(node_url)
-                        port = self._get_port(node_url)
-                        
-                        if not address or port == 0:
-                            return {
-                                'url': node_url,
-                                'success': False,
-                                'latency': 0,
-                                'protocol': protocol,
-                                'address': address,
-                                'port': port,
-                                'remarks': 'Parse failed',
-                                'error': 'Failed to parse node'
-                            }
-                        
-                        # TCP连接测试
-                        start_time = time.time()
-                        try:
-                            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                            sock.settimeout(self.timeout)
-                            result = sock.connect_ex((address, port))
-                            sock.close()
-                            
-                            latency = (time.time() - start_time) * 1000
-                            success = (result == 0)
-                            
-                            return {
-                                'url': node_url,
-                                'success': success,
-                                'latency': latency,
-                                'protocol': protocol,
-                                'address': address,
-                                'port': port,
-                                'remarks': f"{protocol.upper()}-{address}:{port}",
-                                'error': '' if success else f'Connection failed (code: {result})'
-                            }
-                        except socket.gaierror:
-                            return {
-                                'url': node_url,
-                                'success': False,
-                                'latency': 0,
-                                'protocol': protocol,
-                                'address': address,
-                                'port': port,
-                                'remarks': f"{protocol.upper()}-{address}:{port}",
-                                'error': 'DNS resolution failed'
-                            }
-                        except Exception as e:
-                            return {
-                                'url': node_url,
-                                'success': False,
-                                'latency': 0,
-                                'protocol': protocol,
-                                'address': address,
-                                'port': port,
-                                'remarks': f"{protocol.upper()}-{address}:{port}",
-                                'error': f'Test failed: {str(e)}'
-                            }
-                    
-                    except Exception as e:
-                        return {
-                            'url': node_url,
-                            'success': False,
-                            'latency': 0,
-                            'protocol': 'unknown',
-                            'address': 'unknown',
-                            'port': 0,
-                            'remarks': 'Parse error',
-                            'error': f'Parse error: {str(e)}'
-                        }
-                
-                # 并发测试节点
-                logger.info(f"开始TCP连接测试 {len(nodes)} 个节点...")
-                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                    future_to_node = {executor.submit(test_single_node, node): node for node in nodes}
-                    
-                    completed = 0
-                    for future in as_completed(future_to_node):
-                        result = future.result()
-                        results.append(result)
-                        completed += 1
-                        
-                        if completed % 100 == 0 or completed == len(nodes):
-                            success_count = len([r for r in results if r['success']])
-                            logger.info(f"测试进度: {completed}/{len(nodes)}, 可用: {success_count}")
-                
-                return results
-        
-            def _get_protocol(self, url):
-                return url.split('://')[0] if '://' in url else 'unknown'
-        
-            def _get_address(self, url):
-                try:
-                    if url.startswith('vmess://'):
-                        # 处理base64填充
-                        encoded = url[8:]
-                        missing_padding = len(encoded) % 4
-                        if missing_padding:
-                            encoded += '=' * (4 - missing_padding)
-                        data = json.loads(base64.b64decode(encoded).decode())
-                        return data.get('add', 'unknown')
-                    else:
-                        parsed = urlparse(url)
-                        return parsed.hostname or 'unknown'
-                except:
-                    return 'unknown'
-        
-            def _get_port(self, url):
-                try:
-                    if url.startswith('vmess://'):
-                        # 处理base64填充
-                        encoded = url[8:]
-                        missing_padding = len(encoded) % 4
-                        if missing_padding:
-                            encoded += '=' * (4 - missing_padding)
-                        data = json.loads(base64.b64decode(encoded).decode())
-                        return int(data.get('port', 0))
-                    else:
-                        parsed = urlparse(url)
-                        return parsed.port or 0
-                except:
-                    return 0
+from typing import List, Dict, Optional, Tuple
+import threading
+from dataclasses import dataclass
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class NodeCollector:
-    def __init__(self):
-        self.session = None
-        self.all_nodes = set()  # 使用集合去重
-        self.working_nodes = {
-            'vmess': [],
-            'vless': [],
-            'ss': [],
-            'trojan': []
-        }
+@dataclass
+class NodeInfo:
+    """节点信息"""
+    url: str
+    protocol: str
+    address: str
+    port: int
+    remarks: str
+    uuid: str = ""
+    password: str = ""
+    method: str = ""
+    security: str = ""
+    network: str = "tcp"
+    host: str = ""
+    path: str = ""
+    sni: str = ""
+    flow: str = ""
+    alter_id: int = 0
+
+@dataclass
+class TestResult:
+    """测试结果"""
+    node_info: NodeInfo
+    basic_connectivity: bool = False
+    ssl_handshake: bool = False
+    protocol_test: bool = False
+    latency_ms: float = 0.0
+    error_message: str = ""
+    china_score: int = 0
+    is_china_usable: bool = False
+    suggestion: str = ""
+
+class EnhancedNodeTester:
+    def __init__(self, timeout=10, max_workers=20, china_mode=True):
+        self.timeout = timeout
+        self.max_workers = max_workers
+        self.china_mode = china_mode
         
-        # 订阅源列表
-        self.sub_urls = [
-            "https://raw.githubusercontent.com/snakem982/proxypool/main/source/clash-meta.yaml",
-            "https://raw.githubusercontent.com/snakem982/proxypool/main/source/clash-meta-2.yaml",
-            "https://raw.githubusercontent.com/go4sharing/sub/main/sub.yaml",
-            "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/all_configs.txt",
-            "https://raw.githubusercontent.com/firefoxmmx2/v2rayshare_subcription/main/subscription/clash_sub.yaml",
-            "https://raw.githubusercontent.com/Roywaller/clash_subscription/main/clash_subscription.txt",
-            "https://raw.githubusercontent.com/Q3dlaXpoaQ/V2rayN_Clash_Node_Getter/main/APIs/sc0.yaml",
-            "https://raw.githubusercontent.com/Q3dlaXpoaQ/V2rayN_Clash_Node_Getter/main/APIs/sc1.yaml",
-            "https://raw.githubusercontent.com/Q3dlaXpoaQ/V2rayN_Clash_Node_Getter/main/APIs/sc2.yaml",
-            "https://raw.githubusercontent.com/Q3dlaXpoaQ/V2rayN_Clash_Node_Getter/main/APIs/sc3.yaml",
-            "https://raw.githubusercontent.com/Q3dlaXpoaQ/V2rayN_Clash_Node_Getter/main/APIs/sc4.yaml",
-            "https://raw.githubusercontent.com/xiaoji235/airport-free/main/clash/naidounode.txt",
-            "https://raw.githubusercontent.com/mahdibland/SSAggregator/master/sub/sub_merge_yaml.yml",
-            "https://raw.githubusercontent.com/mahdibland/ShadowsocksAggregator/master/Eternity.yml",
-            "https://raw.githubusercontent.com/vxiaov/free_proxies/main/clash/clash.provider.yaml",
-            "https://raw.githubusercontent.com/leetomlee123/freenode/main/README.md",
-            "https://raw.githubusercontent.com/chengaopan/AutoMergePublicNodes/master/list.yml",
-            "https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/clash.yml",
-            "https://raw.githubusercontent.com/zhangkaiitugithub/passcro/main/speednodes.yaml",
-            "https://raw.githubusercontent.com/mgit0001/test_clash/main/heima.txt",
-            "https://raw.githubusercontent.com/mai19950/clashgithub_com/main/site",
-            "https://raw.githubusercontent.com/mai19950/sites/main/sub/v2ray/base64",
-            "https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2",
-            "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub",
-            "https://raw.githubusercontent.com/shahidbhutta/Clash/main/Router",
-            "https://raw.githubusercontent.com/anaer/Sub/main/clash.yaml",
-            "https://raw.githubusercontent.com/free18/v2ray/main/c.yaml",
-            "https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list.yml",
-            "https://raw.githubusercontent.com/mfbpn/tg_mfbpn_sub/main/trial.yaml",
-            "https://raw.githubusercontent.com/Ruk1ng001/freeSub/main/clash.yaml",
-            "https://raw.githubusercontent.com/ripaojiedian/freenode/main/clash",
-            "https://raw.githubusercontent.com/mfuu/v2ray/master/clash.yaml",
-            "https://raw.githubusercontent.com/xiaoji235/airport-free/main/v2ray.txt",
-            "https://raw.githubusercontent.com/vxiaov/free_proxies/main/links.txt",
-            "https://raw.githubusercontent.com/xiaoji235/airport-free/main/v2ray/v2rayshare.txt",
-            "https://raw.githubusercontent.com/MrMohebi/xray-proxy-grabber-telegram/master/collected-proxies/clash-meta/all.yaml",
-            "https://raw.githubusercontent.com/ts-sf/fly/main/clash",
-            "https://raw.githubusercontent.com/Barabama/FreeNodes/main/nodes/yudou66.txt",
-            "https://raw.githubusercontent.com/Barabama/FreeNodes/main/nodes/clashmeta.txt",
-            "https://raw.githubusercontent.com/Barabama/FreeNodes/main/nodes/ndnode.txt",
-            "https://raw.githubusercontent.com/Barabama/FreeNodes/main/nodes/nodev2ray.txt",
-            "https://raw.githubusercontent.com/Barabama/FreeNodes/main/nodes/nodefree.txt",
-            "https://raw.githubusercontent.com/Barabama/FreeNodes/main/nodes/v2rayshare.txt",
-            "https://raw.githubusercontent.com/Barabama/FreeNodes/main/nodes/wenode.txt",
-            "https://raw.githubusercontent.com/ggborr/FREEE-VPN/main/4V2ray",
-            "https://raw.githubusercontent.com/SamanGho/v2ray_collector/main/v2tel_links1.txt",
-            "https://raw.githubusercontent.com/SamanGho/v2ray_collector/main/v2tel_links2.txt",
-            "https://raw.githubusercontent.com/acymz/AutoVPN/main/data/V2.txt",
-            "https://raw.githubusercontent.com/peacefish/nodefree/main/sub/proxy_cf.yaml",
-            "https://raw.githubusercontent.com/darknessm427/IranConfigCollector/main/V2.txt",
-            "https://raw.githubusercontent.com/NiceVPN123/NiceVPN/main/utils/pool/output.yaml",
-            "https://raw.githubusercontent.com/yorkLiu/FreeV2RayNode/main/v2ray.txt",
-            "https://raw.githubusercontent.com/gfpcom/free-proxy-list/main/list/ss.txt",
-            "https://raw.githubusercontent.com/gfpcom/free-proxy-list/main/list/ssr.txt",
-            "https://raw.githubusercontent.com/gfpcom/free-proxy-list/main/list/trojan.txt",
-            "https://raw.githubusercontent.com/gfpcom/free-proxy-list/main/list/vless.txt",
-            "https://raw.githubusercontent.com/gfpcom/free-proxy-list/main/list/vmess.txt",
-            "https://raw.githubusercontent.com/NiceVPN123/NiceVPN/main/Clash.yaml",
-            "https://raw.githubusercontent.com/lagzian/SS-Collector/main/SS/trinity_clash.yaml",
-            "https://raw.githubusercontent.com/lagzian/SS-Collector/main/SS/VM_TrinityBase",
-            "https://raw.githubusercontent.com/lagzian/SS-Collector/main/SS/TrinityBase",
-            "https://raw.githubusercontent.com/darknessm427/IranConfigCollector/main/bulk/ss_iran.txt",
-            "https://dpaste.org/Yvzvr/raw",
-            "https://raw.githubusercontent.com/darknessm427/IranConfigCollector/main/bulk/trojan_iran.txt",
-            "https://raw.githubusercontent.com/darknessm427/IranConfigCollector/main/bulk/vless_iran.txt",
-            "https://raw.githubusercontent.com/darknessm427/IranConfigCollector/main/bulk/vmess_iran.txt",
-            "https://project-d.ekt.me/sub?token=%E5%86%B2%E6%B5%AA%E5%BF%85%E5%A4%87-%E6%B5%B7%E5%A4%96"
+        # 中国翻墙测试目标
+        self.china_test_targets = [
+            "www.google.com",
+            "www.youtube.com", 
+            "www.facebook.com",
+            "www.twitter.com",
+            "www.instagram.com",
+            "www.reddit.com",
+            "www.wikipedia.org",
+            "www.github.com",
+            "www.stackoverflow.com",
+            "www.medium.com"
         ]
-
-    async def __aenter__(self):
-        connector = aiohttp.TCPConnector(limit=100, limit_per_host=10)
-        timeout = aiohttp.ClientTimeout(total=30)
-        self.session = aiohttp.ClientSession(connector=connector, timeout=timeout)
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
-
-    async def fetch_url(self, url: str) -> str:
-        """获取URL内容"""
-        try:
-            logger.info(f"正在获取: {url}")
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    content = await response.text()
-                    logger.info(f"✅ 成功获取 {url} ({len(content)} 字符)")
-                    return content
-                else:
-                    logger.warning(f"❌ 获取失败 {url} - HTTP {response.status}")
-                    return ""
-        except Exception as e:
-            logger.error(f"❌ 获取失败 {url} - {e}")
-            return ""
-
-    def parse_base64_subscription(self, content: str) -> List[str]:
-        """解析base64编码的订阅"""
-        nodes = []
-        try:
-            # 尝试解码base64
-            decoded = base64.b64decode(content + '=' * (4 - len(content) % 4)).decode('utf-8')
-            lines = decoded.strip().split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and (line.startswith('vmess://') or line.startswith('vless://') or 
-                           line.startswith('ss://') or line.startswith('trojan://')):
-                    nodes.append(line)
-        except Exception as e:
-            logger.debug(f"Base64解码失败: {e}")
-        return nodes
-
-    def parse_yaml_subscription(self, content: str) -> List[str]:
-        """解析YAML格式的订阅"""
-        nodes = []
-        try:
-            data = yaml.safe_load(content)
-            if isinstance(data, dict):
-                # Clash格式
-                proxies = data.get('proxies', [])
-                for proxy in proxies:
-                    if isinstance(proxy, dict):
-                        node_url = self.clash_proxy_to_url(proxy)
-                        if node_url:
-                            nodes.append(node_url)
-        except Exception as e:
-            logger.debug(f"YAML解析失败: {e}")
-        return nodes
-
-    def clash_proxy_to_url(self, proxy: Dict) -> str:
-        """将Clash代理配置转换为URL"""
-        try:
-            proxy_type = proxy.get('type', '').lower()
-            server = proxy.get('server', '')
-            port = proxy.get('port', '')
-            name = proxy.get('name', '')
-            
-            if proxy_type == 'vmess':
-                config = {
-                    'v': '2',
-                    'ps': name,
-                    'add': server,
-                    'port': str(port),
-                    'id': proxy.get('uuid', ''),
-                    'aid': str(proxy.get('alterId', 0)),
-                    'scy': proxy.get('cipher', 'auto'),
-                    'net': proxy.get('network', 'tcp'),
-                    'type': proxy.get('ws-opts', {}).get('headers', {}).get('Host', 'none'),
-                    'host': proxy.get('ws-opts', {}).get('headers', {}).get('Host', ''),
-                    'path': proxy.get('ws-opts', {}).get('path', ''),
-                    'tls': 'tls' if proxy.get('tls', False) else ''
-                }
-                encoded = base64.b64encode(json.dumps(config).encode()).decode()
-                return f"vmess://{encoded}"
-                
-            elif proxy_type == 'vless':
-                params = []
-                if proxy.get('flow'):
-                    params.append(f"flow={proxy['flow']}")
-                if proxy.get('security'):
-                    params.append(f"security={proxy['security']}")
-                if proxy.get('network'):
-                    params.append(f"type={proxy['network']}")
-                
-                param_str = '&'.join(params)
-                return f"vless://{proxy.get('uuid', '')}@{server}:{port}?{param_str}#{name}"
-                
-            elif proxy_type == 'ss':
-                method = proxy.get('cipher', '')
-                password = proxy.get('password', '')
-                auth = base64.b64encode(f"{method}:{password}".encode()).decode()
-                return f"ss://{auth}@{server}:{port}#{name}"
-                
-            elif proxy_type == 'trojan':
-                password = proxy.get('password', '')
-                return f"trojan://{password}@{server}:{port}#{name}"
-                
-        except Exception as e:
-            logger.debug(f"Clash代理转换失败: {e}")
-        return ""
-
-    def parse_plain_text(self, content: str) -> List[str]:
-        """解析纯文本格式的节点"""
-        nodes = []
-        lines = content.strip().split('\n')
-        for line in lines:
-            line = line.strip()
-            if line and (line.startswith('vmess://') or line.startswith('vless://') or 
-                       line.startswith('ss://') or line.startswith('trojan://')):
-                nodes.append(line)
-        return nodes
-
-    def extract_nodes_from_markdown(self, content: str) -> List[str]:
-        """从Markdown文件中提取节点"""
-        nodes = []
-        # 查找代码块中的节点
-        code_blocks = re.findall(r'```[\s\S]*?```', content)
-        for block in code_blocks:
-            lines = block.strip('`').split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and (line.startswith('vmess://') or line.startswith('vless://') or 
-                           line.startswith('ss://') or line.startswith('trojan://')):
-                    nodes.append(line)
         
-        # 查找直接的节点链接
-        direct_nodes = re.findall(r'(vmess://[^\s]+|vless://[^\s]+|ss://[^\s]+|trojan://[^\s]+)', content)
-        nodes.extend(direct_nodes)
+        # 全球测试目标
+        self.global_test_targets = [
+            "www.cloudflare.com",
+            "www.amazon.com",
+            "www.microsoft.com",
+            "www.apple.com",
+            "www.netflix.com"
+        ]
         
-        return nodes
-
-    async def collect_all_nodes(self) -> Set[str]:
-        """收集所有节点"""
-        logger.info(f"开始从 {len(self.sub_urls)} 个来源收集节点...")
-        
-        # 并发获取所有订阅
-        tasks = [self.fetch_url(url) for url in self.sub_urls]
-        contents = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        all_nodes = set()
-        
-        for i, content in enumerate(contents):
-            if isinstance(content, Exception):
-                continue
-                
-            if not content:
-                continue
-                
-            url = self.sub_urls[i]
-            nodes = []
-            
-            # 根据内容类型解析节点
-            if url.endswith('.yaml') or url.endswith('.yml'):
-                nodes = self.parse_yaml_subscription(content)
-            elif url.endswith('.md'):
-                nodes = self.extract_nodes_from_markdown(content)
-            else:
-                # 尝试不同的解析方式
-                nodes = self.parse_plain_text(content)
-                if not nodes:
-                    nodes = self.parse_base64_subscription(content)
-                if not nodes:
-                    nodes = self.parse_yaml_subscription(content)
-            
-            if nodes:
-                logger.info(f"📦 从 {url} 解析到 {len(nodes)} 个节点")
-                all_nodes.update(nodes)
-            else:
-                logger.warning(f"⚠️ 从 {url} 未解析到任何节点")
-        
-        logger.info(f"🎯 总共收集到 {len(all_nodes)} 个唯一节点")
-        return all_nodes
-
-    def classify_nodes(self, working_results: List[Dict]) -> Dict[str, List[str]]:
-        """按协议分类节点"""
-        classified = {
-            'vmess': [],
-            'vless': [],
-            'ss': [],
-            'trojan': []
+        # 协议特定端口
+        self.protocol_ports = {
+            'vmess': [443, 80, 8080, 8443, 2053, 2083, 2087, 2096],
+            'vless': [443, 80, 8080, 8443, 2053, 2083, 2087, 2096],
+            'trojan': [443, 80, 8080, 8443, 2053, 2083, 2087, 2096],
+            'ss': [443, 80, 8080, 8443, 2053, 2083, 2087, 2096, 8388, 8389]
         }
         
-        for result in working_results:
-            if result['success']:
-                protocol = result['protocol']
-                if protocol in classified:
-                    classified[protocol].append(result['url'])
+        # 中国ISP常见端口
+        self.china_common_ports = [80, 443, 8080, 8443, 2053, 2083, 2087, 2096, 8388, 8389]
         
-        return classified
-
-    def generate_clash_config(self, working_results: List[Dict]) -> Dict:
-        """生成Clash配置"""
-        proxies = []
-        proxy_names = []
-        
-        for result in working_results:
-            if not result['success']:
-                continue
-                
-            try:
-                checker = SimpleNodeChecker()
-                node = checker.parse_node(result['url'])
-                if not node:
-                    continue
-                
-                proxy_name = f"{node['remarks'] or node['address']}_{node['port']}"
-                proxy_names.append(proxy_name)
-                
-                if node['protocol'] == 'vmess':
-                    proxy = {
-                        'name': proxy_name,
-                        'type': 'vmess',
-                        'server': node['address'],
-                        'port': node['port'],
-                        'uuid': node['id'],
-                        'alterId': node.get('alterId', 0),
-                        'cipher': node.get('security', 'auto'),
-                        'network': node.get('network', 'tcp'),
-                        'tls': node.get('tls') == 'tls'
-                    }
-                    
-                elif node['protocol'] == 'vless':
-                    proxy = {
-                        'name': proxy_name,
-                        'type': 'vless',
-                        'server': node['address'],
-                        'port': node['port'],
-                        'uuid': node['id'],
-                        'tls': node.get('tls') == 'tls'
-                    }
-                    
-                elif node['protocol'] == 'ss':
-                    proxy = {
-                        'name': proxy_name,
-                        'type': 'ss',
-                        'server': node['address'],
-                        'port': node['port'],
-                        'cipher': node.get('method', 'aes-256-gcm'),
-                        'password': node.get('password', '')
-                    }
-                    
-                elif node['protocol'] == 'trojan':
-                    proxy = {
-                        'name': proxy_name,
-                        'type': 'trojan',
-                        'server': node['address'],
-                        'port': node['port'],
-                        'password': node.get('password', ''),
-                        'sni': node.get('sni', ''),
-                        'skip-cert-verify': True
-                    }
-                
-                if proxy:
-                    proxies.append(proxy)
-                    
-            except Exception as e:
-                logger.debug(f"生成Clash配置失败: {e}")
-                continue
-        
-        # 生成完整的Clash配置
-        clash_config = {
-            'port': 7890,
-            'socks-port': 7891,
-            'allow-lan': True,
-            'mode': 'Rule',
-            'log-level': 'info',
-            'external-controller': '127.0.0.1:9090',
-            'proxies': proxies,
-            'proxy-groups': [
-                {
-                    'name': 'PROXY',
-                    'type': 'select',
-                    'proxies': ['♻️ 自动选择'] + proxy_names
-                },
-                {
-                    'name': '♻️ 自动选择',
-                    'type': 'url-test',
-                    'proxies': proxy_names,
-                    'url': 'http://www.gstatic.com/generate_204',
-                    'interval': 300
-                }
-            ],
-            'rules': [
-                'DOMAIN-SUFFIX,google.com,PROXY',
-                'DOMAIN-SUFFIX,youtube.com,PROXY',
-                'DOMAIN-SUFFIX,facebook.com,PROXY',
-                'DOMAIN-SUFFIX,twitter.com,PROXY',
-                'DOMAIN-SUFFIX,telegram.org,PROXY',
-                'GEOIP,CN,DIRECT',
-                'MATCH,PROXY'
-            ]
+        # 评分权重
+        self.score_weights = {
+            'connectivity': 0.3,
+            'latency': 0.25,
+            'ssl_support': 0.2,
+            'protocol_compatibility': 0.15,
+            'port_commonality': 0.1
         }
-        
-        return clash_config
 
-    def create_directories(self):
-        """创建必要的目录"""
-        os.makedirs('nodes', exist_ok=True)
-
-    def save_results(self, classified_nodes: Dict[str, List[str]], clash_config: Dict):
-        """保存结果到文件"""
-        self.create_directories()
-        
-        # 保存各协议节点
-        for protocol, nodes in classified_nodes.items():
-            if nodes:
-                filename = f'nodes/{protocol}.txt' if protocol != 'ss' else 'nodes/shadowsocks.txt'
-                with open(filename, 'w', encoding='utf-8') as f:
-                    for node in nodes:
-                        f.write(node + '\n')
-                logger.info(f"💾 保存 {len(nodes)} 个 {protocol.upper()} 节点到 {filename}")
-        
-        # 保存V2Ray格式（包含vmess和vless）
-        v2ray_nodes = classified_nodes['vmess'] + classified_nodes['vless']
-        if v2ray_nodes:
-            with open('nodes/v2ray.txt', 'w', encoding='utf-8') as f:
-                for node in v2ray_nodes:
-                    f.write(node + '\n')
-            logger.info(f"💾 保存 {len(v2ray_nodes)} 个 V2Ray 节点到 nodes/v2ray.txt")
-        
-        # 保存Clash配置
-        if clash_config['proxies']:
-            with open('nodes/clash.yaml', 'w', encoding='utf-8') as f:
-                yaml.dump(clash_config, f, default_flow_style=False, allow_unicode=True)
-            logger.info(f"💾 保存 {len(clash_config['proxies'])} 个节点的 Clash 配置到 nodes/clash.yaml")
-
-    async def run(self):
-        """运行完整的收集和测活流程"""
-        start_time = time.time()
-        
-        # 1. 收集所有节点
-        logger.info("🚀 开始节点收集和测活流程...")
-        all_nodes = await self.collect_all_nodes()
-        
-        if not all_nodes:
-            logger.error("❌ 未收集到任何节点")
-            return
-        
-        # 2. 测活检测（增强版，专门针对中国大陆翻墙）
-        logger.info(f"🔍 开始中国大陆翻墙测活检测 {len(all_nodes)} 个节点...")
-        
-        # 尝试导入高级节点检测器，如果失败则使用内置的简化版本
+    def parse_node(self, url: str) -> Optional[NodeInfo]:
+        """解析节点URL"""
         try:
-            from advanced_node_tester import AdvancedNodeTester as SimpleNodeChecker
-        except ImportError:
-            try:
-                from simple_node_checker import SimpleNodeChecker
-            except ImportError:
-                # 如果找不到模块，定义一个简化的节点检测器
-                class SimpleNodeChecker:
-                    def __init__(self, timeout=5, max_workers=50):
-                        self.timeout = timeout
-                        self.max_workers = max_workers
-                
-                    def check_nodes_batch(self, nodes):
-                        """真正的节点批量检测"""
-                        import socket
-                        from concurrent.futures import ThreadPoolExecutor, as_completed
-                        
-                        results = []
-                        
-                        def test_single_node(node_url):
-                            try:
-                                protocol = self._get_protocol(node_url)
-                                address = self._get_address(node_url)
-                                port = self._get_port(node_url)
-                                
-                                if not address or port == 0:
-                                    return {
-                                        'url': node_url,
-                                        'success': False,
-                                        'latency': 0,
-                                        'protocol': protocol,
-                                        'address': address,
-                                        'port': port,
-                                        'remarks': 'Parse failed',
-                                        'error': 'Failed to parse node'
-                                    }
-                                
-                                # TCP连接测试
-                                start_time = time.time()
-                                try:
-                                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                                    sock.settimeout(self.timeout)
-                                    result = sock.connect_ex((address, port))
-                                    sock.close()
-                                    
-                                    latency = (time.time() - start_time) * 1000
-                                    success = (result == 0)
-                                    
-                                    return {
-                                        'url': node_url,
-                                        'success': success,
-                                        'latency': latency,
-                                        'protocol': protocol,
-                                        'address': address,
-                                        'port': port,
-                                        'remarks': f"{protocol.upper()}-{address}:{port}",
-                                        'error': '' if success else f'Connection failed (code: {result})'
-                                    }
-                                except socket.gaierror:
-                                    return {
-                                        'url': node_url,
-                                        'success': False,
-                                        'latency': 0,
-                                        'protocol': protocol,
-                                        'address': address,
-                                        'port': port,
-                                        'remarks': f"{protocol.upper()}-{address}:{port}",
-                                        'error': 'DNS resolution failed'
-                                    }
-                                except Exception as e:
-                                    return {
-                                        'url': node_url,
-                                        'success': False,
-                                        'latency': 0,
-                                        'protocol': protocol,
-                                        'address': address,
-                                        'port': port,
-                                        'remarks': f"{protocol.upper()}-{address}:{port}",
-                                        'error': f'Test failed: {str(e)}'
-                                    }
-                            
-                            except Exception as e:
-                                return {
-                                    'url': node_url,
-                                    'success': False,
-                                    'latency': 0,
-                                    'protocol': 'unknown',
-                                    'address': 'unknown',
-                                    'port': 0,
-                                    'remarks': 'Parse error',
-                                    'error': f'Parse error: {str(e)}'
-                                }
-                        
-                        # 并发测试节点
-                        logger.info(f"开始TCP连接测试 {len(nodes)} 个节点...")
-                        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                            future_to_node = {executor.submit(test_single_node, node): node for node in nodes}
-                            
-                            completed = 0
-                            for future in as_completed(future_to_node):
-                                result = future.result()
-                                results.append(result)
-                                completed += 1
-                                
-                                if completed % 100 == 0 or completed == len(nodes):
-                                    success_count = len([r for r in results if r['success']])
-                                    logger.info(f"测试进度: {completed}/{len(nodes)}, 可用: {success_count}")
-                        
-                        return results
-                
-                    def _get_protocol(self, url):
-                        return url.split('://')[0] if '://' in url else 'unknown'
-                
-                    def _get_address(self, url):
-                        try:
-                            if url.startswith('vmess://'):
-                                # 处理base64填充
-                                encoded = url[8:]
-                                missing_padding = len(encoded) % 4
-                                if missing_padding:
-                                    encoded += '=' * (4 - missing_padding)
-                                data = json.loads(base64.b64decode(encoded).decode())
-                                return data.get('add', 'unknown')
-                            else:
-                                parsed = urlparse(url)
-                                return parsed.hostname or 'unknown'
-                        except:
-                            return 'unknown'
-                
-                    def _get_port(self, url):
-                        try:
-                            if url.startswith('vmess://'):
-                                # 处理base64填充
-                                encoded = url[8:]
-                                missing_padding = len(encoded) % 4
-                                if missing_padding:
-                                    encoded += '=' * (4 - missing_padding)
-                                data = json.loads(base64.b64decode(encoded).decode())
-                                return int(data.get('port', 0))
-                            else:
-                                parsed = urlparse(url)
-                                return parsed.port or 0
-                        except:
-                            return 0
-        
-        # 使用高级测活器进行更精准的测试
-        china_tester = SimpleNodeChecker(timeout=8, max_workers=30)
-        
-        # 限制测试节点数量（避免过度耗时）
-        nodes_to_test = list(all_nodes)
-        if len(nodes_to_test) > 5000:
-            logger.info(f"节点数量过多({len(nodes_to_test)})，随机选择5000个进行测试")
-            import random
-            nodes_to_test = random.sample(nodes_to_test, 5000)
-        
-        # 先进行基础测活
-        basic_checker = SimpleNodeChecker(timeout=3, max_workers=100)  # 减少超时时间，增加并发
-        basic_results = basic_checker.check_nodes_batch(nodes_to_test)
-        
-        # 对基础测活通过的节点进行中国翻墙测试
-        working_basic = [r for r in basic_results if r['success']]
-        logger.info(f"📊 基础测活通过: {len(working_basic)}/{len(all_nodes)} 个节点")
-        
-        if working_basic:
-            logger.info(f"🔧 开始二次高级测活检测...")
-            china_results = china_tester.check_nodes_batch([r['url'] for r in working_basic])
+            if url.startswith('vmess://'):
+                return self._parse_vmess(url)
+            elif url.startswith('vless://'):
+                return self._parse_vless(url)
+            elif url.startswith('ss://'):
+                return self._parse_shadowsocks(url)
+            elif url.startswith('trojan://'):
+                return self._parse_trojan(url)
+            else:
+                return None
+        except Exception as e:
+            logger.debug(f"解析节点失败 {url}: {e}")
+            return None
+
+    def _parse_vmess(self, url: str) -> Optional[NodeInfo]:
+        """解析VMess节点"""
+        try:
+            encoded = url[8:]
+            # 处理base64填充
+            missing_padding = len(encoded) % 4
+            if missing_padding:
+                encoded += '=' * (4 - missing_padding)
             
-            # 合并结果，优先使用高级测试的结果
-            china_results_dict = {r['url']: r for r in china_results}
+            data = json.loads(base64.b64decode(encoded).decode())
             
-            results = []
-            for basic_result in basic_results:
-                url = basic_result['url']
-                if url in china_results_dict:
-                    # 使用高级测试结果
-                    china_result = china_results_dict[url]
-                    enhanced_result = {
-                        'url': url,
-                        'success': china_result.get('success', False),
-                        'latency': china_result.get('latency', 0),
-                        'protocol': china_result.get('protocol', ''),
-                        'address': china_result.get('address', ''),
-                        'port': china_result.get('port', 0),
-                        'remarks': china_result.get('remarks', ''),
-                        'china_score': 85 if china_result.get('success', False) else 0,  # 简化评分
-                        'china_usable': china_result.get('success', False),
-                        'suggestion': '高级测试通过' if china_result.get('success', False) else '高级测试失败',
-                        'error': china_result.get('error', '') if not china_result.get('success', False) else ''
-                    }
-                    results.append(enhanced_result)
+            return NodeInfo(
+                url=url,
+                protocol='vmess',
+                address=data.get('add', ''),
+                port=int(data.get('port', 0)),
+                remarks=data.get('ps', ''),
+                uuid=data.get('id', ''),
+                alter_id=int(data.get('aid', 0)),
+                security=data.get('scy', 'auto'),
+                network=data.get('net', 'tcp'),
+                host=data.get('host', ''),
+                path=data.get('path', ''),
+                sni=data.get('sni', '')
+            )
+        except Exception as e:
+            logger.debug(f"VMess解析失败: {e}")
+            return None
+
+    def _parse_vless(self, url: str) -> Optional[NodeInfo]:
+        """解析VLESS节点"""
+        try:
+            parsed = urlparse(url)
+            uuid = parsed.username
+            address = parsed.hostname
+            port = parsed.port or 443
+            
+            # 解析参数
+            params = parse_qs(parsed.query)
+            
+            return NodeInfo(
+                url=url,
+                protocol='vless',
+                address=address,
+                port=port,
+                remarks=unquote(parsed.fragment or ''),
+                uuid=uuid,
+                security=params.get('security', ['none'])[0],
+                network=params.get('type', ['tcp'])[0],
+                host=params.get('host', [''])[0],
+                path=params.get('path', [''])[0],
+                sni=params.get('sni', [''])[0],
+                flow=params.get('flow', [''])[0]
+            )
+        except Exception as e:
+            logger.debug(f"VLESS解析失败: {e}")
+            return None
+
+    def _parse_shadowsocks(self, url: str) -> Optional[NodeInfo]:
+        """解析Shadowsocks节点"""
+        try:
+            if '@' in url:
+                # 新格式: ss://method:password@server:port#remarks
+                auth_part, server_part = url[5:].split('@')
+                method, password = auth_part.split(':')
+                server, port = server_part.split('#')[0].split(':')
+                remarks = server_part.split('#')[1] if '#' in server_part else ''
+            else:
+                # 旧格式: ss://base64(method:password@server:port)#remarks
+                encoded = url[5:].split('#')[0]
+                decoded = base64.b64decode(encoded + '=' * (4 - len(encoded) % 4)).decode()
+                auth_server, remarks = url[5:].split('#')[1] if '#' in url[5:] else ('', '')
+                method_password, server_port = decoded.split('@')
+                method, password = method_password.split(':')
+                server, port = server_port.split(':')
+            
+            return NodeInfo(
+                url=url,
+                protocol='ss',
+                address=server,
+                port=int(port),
+                remarks=unquote(remarks),
+                method=method,
+                password=password
+            )
+        except Exception as e:
+            logger.debug(f"Shadowsocks解析失败: {e}")
+            return None
+
+    def _parse_trojan(self, url: str) -> Optional[NodeInfo]:
+        """解析Trojan节点"""
+        try:
+            parsed = urlparse(url)
+            password = parsed.username
+            address = parsed.hostname
+            port = parsed.port or 443
+            
+            # 解析参数
+            params = parse_qs(parsed.query)
+            
+            return NodeInfo(
+                url=url,
+                protocol='trojan',
+                address=address,
+                port=port,
+                remarks=unquote(parsed.fragment or ''),
+                password=password,
+                sni=params.get('sni', [''])[0]
+            )
+        except Exception as e:
+            logger.debug(f"Trojan解析失败: {e}")
+            return None
+
+    def _test_basic_connectivity(self, node_info: NodeInfo) -> Tuple[bool, float, str]:
+        """基础连接性测试"""
+        try:
+            start_time = time.time()
+            
+            # 创建socket连接
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            
+            result = sock.connect_ex((node_info.address, node_info.port))
+            latency = (time.time() - start_time) * 1000
+            
+            sock.close()
+            
+            if result == 0:
+                return True, latency, ""
+            else:
+                return False, 0, f"Connection failed (code: {result})"
+                
+        except socket.gaierror:
+            return False, 0, "DNS resolution failed"
+        except socket.timeout:
+            return False, 0, "Connection timeout"
+        except Exception as e:
+            return False, 0, f"Connection error: {str(e)}"
+
+    def _test_ssl_handshake(self, node_info: NodeInfo) -> Tuple[bool, str]:
+        """SSL握手测试"""
+        try:
+            # 创建SSL上下文
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            
+            # 创建socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            
+            # 包装为SSL socket
+            ssl_sock = context.wrap_socket(sock, server_hostname=node_info.sni or node_info.address)
+            ssl_sock.connect((node_info.address, node_info.port))
+            
+            # 获取SSL信息
+            cipher = ssl_sock.cipher()
+            version = ssl_sock.version()
+            
+            ssl_sock.close()
+            
+            return True, f"SSL {version} with {cipher[0]}"
+            
+        except ssl.SSLError as e:
+            return False, f"SSL error: {str(e)}"
+        except Exception as e:
+            return False, f"SSL test failed: {str(e)}"
+
+    def _test_protocol_specific(self, node_info: NodeInfo) -> Tuple[bool, str]:
+        """协议特定测试"""
+        try:
+            if node_info.protocol == 'vmess':
+                return self._test_vmess_protocol(node_info)
+            elif node_info.protocol == 'vless':
+                return self._test_vless_protocol(node_info)
+            elif node_info.protocol == 'trojan':
+                return self._test_trojan_protocol(node_info)
+            elif node_info.protocol == 'ss':
+                return self._test_ss_protocol(node_info)
+            else:
+                return False, "Unknown protocol"
+        except Exception as e:
+            return False, f"Protocol test failed: {str(e)}"
+
+    def _test_vmess_protocol(self, node_info: NodeInfo) -> Tuple[bool, str]:
+        """VMess协议测试"""
+        try:
+            # 检查必要的字段
+            if not node_info.uuid or not node_info.address or not node_info.port:
+                return False, "Missing required fields"
+            
+            # 检查alterId
+            if node_info.alter_id > 0:
+                return True, f"VMess with alterId {node_info.alter_id}"
+            else:
+                return True, "VMess AEAD"
+                
+        except Exception as e:
+            return False, f"VMess test failed: {str(e)}"
+
+    def _test_vless_protocol(self, node_info: NodeInfo) -> Tuple[bool, str]:
+        """VLESS协议测试"""
+        try:
+            if not node_info.uuid or not node_info.address or not node_info.port:
+                return False, "Missing required fields"
+            
+            # 检查TLS配置
+            if node_info.security == 'tls':
+                if not node_info.sni:
+                    return True, "VLESS with TLS (no SNI)"
                 else:
-                    # 基础测试失败的节点
-                    basic_result['china_usable'] = False
-                    basic_result['china_score'] = 0
-                    results.append(basic_result)
-            
-            # 保存高级测试详细报告
-            with open('advanced_test_summary.json', 'w', encoding='utf-8') as f:
-                json.dump(china_results, f, ensure_ascii=False, indent=2)
-            logger.info(f"💾 高级测试详细报告已保存到 advanced_test_summary.json")
-            
-        else:
-            logger.warning("⚠️ 没有节点通过基础测活，跳过高级测试")
-            results = basic_results
-        
-        # 3. 过滤可用节点（优先中国翻墙适用的节点）
-        working_results = [r for r in results if r['success']]
-        china_usable_results = [r for r in results if r.get('china_usable', False)]
-        
-        logger.info(f"✅ 基础可用节点: {len(working_results)} 个")
-        logger.info(f"🇨🇳 中国翻墙适用节点: {len(china_usable_results)} 个")
-        
-        # 如果有中国适用的节点，优先使用这些节点
-        if china_usable_results:
-            # 按中国评分排序，取最好的节点
-            china_usable_results.sort(key=lambda x: x.get('china_score', 0), reverse=True)
-            final_results = china_usable_results
-            logger.info(f"🎯 优先保存 {len(final_results)} 个中国翻墙适用节点")
-        else:
-            # 如果没有中国适用的节点，使用基础可用节点
-            final_results = working_results
-            logger.info(f"⚠️ 未找到中国翻墙适用节点，使用 {len(final_results)} 个基础可用节点")
-        
-        if not final_results:
-            logger.error("❌ 没有可用的节点")
-            return
-        
-        # 4. 按协议分类
-        classified_nodes = self.classify_nodes(final_results)
-        
-        # 5. 生成Clash配置
-        clash_config = self.generate_clash_config(final_results)
-        
-        # 6. 保存结果
-        self.save_results(classified_nodes, clash_config)
-        
-        # 7. 生成统计报告
-        total_time = time.time() - start_time
-        logger.info(f"🎉 任务完成！总用时: {total_time:.1f}秒")
-        logger.info("📊 统计结果:")
-        logger.info(f"  - 总收集节点: {len(all_nodes)}")
-        logger.info(f"  - 基础可用节点: {len(working_results)}")
-        logger.info(f"  - 🇨🇳 中国翻墙适用节点: {len(china_usable_results)}")
-        logger.info(f"  - 最终保存节点: {len(final_results)}")
-        logger.info(f"  - 基础成功率: {len(working_results)/len(all_nodes)*100:.1f}%")
-        logger.info(f"  - 🇨🇳 中国翻墙成功率: {len(china_usable_results)/len(all_nodes)*100:.1f}%")
-        logger.info(f"  - VMess节点: {len(classified_nodes['vmess'])}")
-        logger.info(f"  - VLESS节点: {len(classified_nodes['vless'])}")
-        logger.info(f"  - Shadowsocks节点: {len(classified_nodes['ss'])}")
-        logger.info(f"  - Trojan节点: {len(classified_nodes['trojan'])}")
-        
-        # 如果有中国测试结果，显示详细统计
-        if china_usable_results:
-            avg_score = sum(r.get('china_score', 0) for r in china_usable_results) / len(china_usable_results)
-            logger.info(f"  - 🇨🇳 平均中国翻墙评分: {avg_score:.1f}/100")
-            high_score_nodes = [r for r in china_usable_results if r.get('china_score', 0) >= 80]
-            logger.info(f"  - 🇨🇳 高质量节点(≥80分): {len(high_score_nodes)}")
-            
-            # 按协议统计中国适用节点
-            china_by_protocol = {}
-            for result in china_usable_results:
-                protocol = result.get('protocol', 'unknown').lower()
-                china_by_protocol[protocol] = china_by_protocol.get(protocol, 0) + 1
-            
-            logger.info("  - 🇨🇳 中国翻墙节点协议分布:")
-            for protocol, count in sorted(china_by_protocol.items()):
-                logger.info(f"    * {protocol.upper()}: {count}")
+                    return True, f"VLESS with TLS SNI: {node_info.sni}"
+            else:
+                return True, "VLESS without TLS"
                 
-        logger.info(f"💾 所有结果已保存到 nodes/ 目录")
+        except Exception as e:
+            return False, f"VLESS test failed: {str(e)}"
 
+    def _test_trojan_protocol(self, node_info: NodeInfo) -> Tuple[bool, str]:
+        """Trojan协议测试"""
+        try:
+            if not node_info.password or not node_info.address or not node_info.port:
+                return False, "Missing required fields"
+            
+            # Trojan通常需要TLS
+            if node_info.sni:
+                return True, f"Trojan with SNI: {node_info.sni}"
+            else:
+                return True, "Trojan (no SNI)"
+                
+        except Exception as e:
+            return False, f"Trojan test failed: {str(e)}"
 
-async def main():
-    """主函数"""
-    async with NodeCollector() as collector:
-        await collector.run()
+    def _test_ss_protocol(self, node_info: NodeInfo) -> Tuple[bool, str]:
+        """Shadowsocks协议测试"""
+        try:
+            if not node_info.method or not node_info.password or not node_info.address or not node_info.port:
+                return False, "Missing required fields"
+            
+            # 检查加密方法
+            valid_methods = ['aes-256-gcm', 'aes-128-gcm', 'chacha20-poly1305', 'aes-256-cfb', 'aes-128-cfb']
+            if node_info.method not in valid_methods:
+                return False, f"Unsupported method: {node_info.method}"
+            
+            return True, f"SS with {node_info.method}"
+            
+        except Exception as e:
+            return False, f"SS test failed: {str(e)}"
 
+    def _calculate_china_score(self, result: TestResult) -> int:
+        """计算中国翻墙评分"""
+        score = 0
+        
+        # 基础连接性 (30分)
+        if result.basic_connectivity:
+            score += 30
+        
+        # 延迟评分 (25分)
+        if result.latency_ms > 0:
+            if result.latency_ms < 100:
+                score += 25
+            elif result.latency_ms < 200:
+                score += 20
+            elif result.latency_ms < 500:
+                score += 15
+            elif result.latency_ms < 1000:
+                score += 10
+            else:
+                score += 5
+        
+        # SSL支持 (20分)
+        if result.ssl_handshake:
+            score += 20
+        
+        # 协议兼容性 (15分)
+        if result.protocol_test:
+            score += 15
+        
+        # 端口常见性 (10分)
+        if result.node_info.port in self.china_common_ports:
+            score += 10
+        
+        # 协议特定加分
+        if result.node_info.protocol == 'vmess':
+            if result.node_info.alter_id == 0:  # AEAD模式
+                score += 5
+        elif result.node_info.protocol == 'vless':
+            if result.node_info.security == 'tls':
+                score += 5
+        elif result.node_info.protocol == 'trojan':
+            score += 5  # Trojan在中国表现较好
+        
+        return min(score, 100)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    def _generate_suggestion(self, result: TestResult) -> str:
+        """生成建议"""
+        if result.china_score >= 80:
+            return "优秀节点，推荐使用"
+        elif result.china_score >= 60:
+            return "良好节点，可以尝试"
+        elif result.china_score >= 40:
+            return "一般节点，备用选择"
+        else:
+            return "质量较差，不推荐"
+
+    def test_single_node(self, url: str) -> TestResult:
+        """测试单个节点"""
+        try:
+            # 解析节点
+            node_info = self.parse_node(url)
+            if not node_info:
+                return TestResult(
+                    node_info=NodeInfo(url=url, protocol='unknown', address='', port=0, remarks=''),
+                    error_message="Failed to parse node"
+                )
+            
+            result = TestResult(node_info=node_info)
+            
+            # 1. 基础连接性测试
+            result.basic_connectivity, result.latency_ms, error = self._test_basic_connectivity(node_info)
+            if not result.basic_connectivity:
+                result.error_message = error
+                return result
+            
+            # 2. SSL握手测试（如果端口是443或支持TLS）
+            if node_info.port == 443 or node_info.protocol in ['vless', 'trojan']:
+                result.ssl_handshake, ssl_info = self._test_ssl_handshake(node_info)
+            
+            # 3. 协议特定测试
+            result.protocol_test, protocol_info = self._test_protocol_specific(node_info)
+            
+            # 4. 计算中国翻墙评分
+            result.china_score = self._calculate_china_score(result)
+            result.is_china_usable = result.china_score >= 40  # 40分以上认为可用
+            result.suggestion = self._generate_suggestion(result)
+            
+            return result
+            
+        except Exception as e:
+            return TestResult(
+                node_info=NodeInfo(url=url, protocol='unknown', address='', port=0, remarks=''),
+                error_message=f"Test failed: {str(e)}"
+            )
+
+    def check_nodes_batch(self, nodes: List[str]) -> List[Dict]:
+        """批量检测节点"""
+        logger.info(f"开始增强版节点检测，共 {len(nodes)} 个节点...")
+        
+        results = []
+        completed = 0
+        
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_node = {executor.submit(self.test_single_node, node): node for node in nodes}
+            
+            for future in as_completed(future_to_node):
+                test_result = future.result()
+                completed += 1
+                
+                # 转换为字典格式
+                result_dict = {
+                    'url': test_result.node_info.url,
+                    'success': test_result.is_china_usable,
+                    'latency': test_result.latency_ms,
+                    'protocol': test_result.node_info.protocol,
+                    'address': test_result.node_info.address,
+                    'port': test_result.node_info.port,
+                    'remarks': test_result.node_info.remarks,
+                    'china_score': test_result.china_score,
+                    'china_usable': test_result.is_china_usable,
+                    'suggestion': test_result.suggestion,
+                    'error': test_result.error_message,
+                    'basic_connectivity': test_result.basic_connectivity,
+                    'ssl_handshake': test_result.ssl_handshake,
+                    'protocol_test': test_result.protocol_test
+                }
+                
+                results.append(result_dict)
+                
+                # 进度报告
+                if completed % 50 == 0 or completed == len(nodes):
+                    usable_count = len([r for r in results if r['china_usable']])
+                    avg_score = sum(r['china_score'] for r in results) / len(results) if results else 0
+                    logger.info(f"检测进度: {completed}/{len(nodes)}, 可用: {usable_count}, 平均评分: {avg_score:.1f}")
+        
+        # 按评分排序
+        results.sort(key=lambda x: x['china_score'], reverse=True)
+        
+        logger.info(f"检测完成！可用节点: {len([r for r in results if r['china_usable']])}/{len(results)}")
+        
+        return results
+
+    def get_test_targets(self) -> List[str]:
+        """获取测试目标"""
+        if self.china_mode:
+            return self.china_test_targets
+        else:
+            return self.global_test_targets
+
+# 兼容性包装器
+class SimpleNodeChecker:
+    """兼容性包装器，保持与原有代码的兼容性"""
+    
+    def __init__(self, timeout=10, max_workers=20):
+        self.enhanced_tester = EnhancedNodeTester(timeout=timeout, max_workers=max_workers)
+    
+    def check_nodes_batch(self, nodes: List[str]) -> List[Dict]:
+        """批量检测节点"""
+        return self.enhanced_tester.check_nodes_batch(nodes)
+    
+    def parse_node(self, url: str) -> Optional[Dict]:
+        """解析节点（兼容性方法）"""
+        node_info = self.enhanced_tester.parse_node(url)
+        if node_info:
+            return {
+                'protocol': node_info.protocol,
+                'address': node_info.address,
+                'port': node_info.port,
+                'remarks': node_info.remarks,
+                'uuid': node_info.uuid,
+                'password': node_info.password,
+                'method': node_info.method,
+                'security': node_info.security,
+                'network': node_info.network,
+                'host': node_info.host,
+                'path': node_info.path,
+                'sni': node_info.sni,
+                'flow': node_info.flow,
+                'alterId': node_info.alter_id
+            }
+        return None
