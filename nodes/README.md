@@ -4,13 +4,13 @@
 [![Telegram](https://img.shields.io/badge/📱_TG频道-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/fq521)
 
 ## 📊 节点统计
-- 📈 **总节点数**: 2838
-- 🎯 **V2Ray节点**: 2280
-- 🛡️ **Shadowsocks节点**: 215
-- 🔐 **Trojan节点**: 343
+- 📈 **总节点数**: 2824
+- 🎯 **V2Ray节点**: 2276
+- 🛡️ **Shadowsocks节点**: 233
+- 🔐 **Trojan节点**: 315
 - ⚡ **Clash配置**: 0 个代理
 
-- 🔄 **更新时间**: 2025-06-27 18:53:37 UTC
+- 🔄 **更新时间**: 2025-06-28 03:34:43 UTC
 - 🌐 **数据来源**: 60+ 免费节点订阅源
 - ✅ **测活检测**: 自动筛选可用节点
 - 🚀 **更新频率**: 每6小时自动更新
